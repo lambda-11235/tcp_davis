@@ -10,8 +10,7 @@ static const unsigned long MAX_CWND = 32768*32768;
 static const unsigned long REC_START = 4;
 
 static const double MAX_RTT_GAIN = 5.0e-3;
-static const double RTT_LOW = 1.0e-6;
-static const double RTT_HIGH = 10.0;
+static const double RTT_INF = 10.0;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
@@ -22,13 +21,11 @@ void dumb_init(struct dumb *d)
 {
     d->cwnd = MIN_CWND;
     d->ssthresh = MAX_CWND;
-
     d->rec_count = 0;
-    d->save_cwnd = MIN_CWND;
-    
-    d->min_rtt = RTT_HIGH;
-    d->max_rtt = RTT_LOW;
-    
+
+    d->min_rtt = RTT_INF;
+    d->max_rate = 0;
+
     d->rtt_sum = 0;
     d->rtt_count = 0;
 }
@@ -37,7 +34,6 @@ void dumb_init(struct dumb *d)
 void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
 {
     double avg_rtt;
-    unsigned long acks = d->cwnd;
 
     d->rtt_sum += rtt;
     d->rtt_count++;
@@ -51,13 +47,11 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
             d->rec_count--;
 
             if (d->rec_count == 0) {
-                d->cwnd = d->save_cwnd*d->min_rtt/d->max_rtt;
+                d->cwnd = d->max_rate*d->min_rtt;
                 d->ssthresh = d->cwnd;
 
-                d->save_cwnd = MIN_CWND;
-                
                 d->min_rtt = avg_rtt;
-                d->max_rtt = avg_rtt;
+                d->max_rate = 0;
             }
         } else if (avg_rtt > target_rtt) {
             dumb_on_loss(d);
@@ -66,13 +60,18 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
         }
 
         if (avg_rtt > 0) {
+            double rate = d->cwnd/avg_rtt;
+
             d->min_rtt = min(d->min_rtt, avg_rtt);
-            d->max_rtt = max(d->max_rtt, avg_rtt);
+            d->max_rate = max(d->max_rate, rate);
         }
 
         d->rtt_sum = rtt;
         d->rtt_count = 1;
     } else if (d->cwnd < d->ssthresh) {
+        if (rtt > 0)
+            d->max_rate = max(d->max_rate, d->cwnd/rtt);
+
         d->cwnd++;
     }
 
@@ -85,7 +84,6 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
 void dumb_on_loss(struct dumb *d)
 {
     d->rec_count = REC_START;
-    d->save_cwnd = d->cwnd;
 
     d->cwnd = MIN_CWND;
     d->ssthresh = d->cwnd;

@@ -13,19 +13,18 @@
 
 static const u64 MIN_CWND = 2;
 static const u32 MAX_RTT_GAIN = 5000;
-static const u32 RTT_LOW = 1;
-static const u32 RTT_HIGH = 10000000;
+static const u32 RTT_INF = 10000000;
 static const u8 REC_START = 4;
 
 
 struct dumb {
-    u64 save_cwnd;
-
+    // RTTs are in microseconds
     u64 rtt_sum;
     u64 rtt_count;
 
+    // max_rate is in mss/second
+    u64 max_rate;
     u32 min_rtt;
-    u32 max_rtt;
 
     u8 rec_count;
 };
@@ -49,10 +48,9 @@ void tcp_dumb_init(struct sock *sk)
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 
     dumb->rec_count = 0;
-    dumb->save_cwnd = MIN_CWND;
 
-    dumb->min_rtt = RTT_HIGH;
-    dumb->max_rtt = RTT_LOW;
+    dumb->min_rtt = RTT_INF;
+    dumb->max_rate = 0;
 
     dumb->rtt_sum = 0;
     dumb->rtt_count = 0;
@@ -64,8 +62,8 @@ void tcp_dumb_release(struct sock *sk)
 {
     struct dumb *dumb = inet_csk_ca(sk);
 
-    printk(KERN_INFO "tcp_dumb: min_rtt = %u, max_rtt = %u\n",
-           dumb->min_rtt, dumb->max_rtt);
+    printk(KERN_INFO "tcp_dumb: min_rtt = %u, max_rate = %llu\n",
+           dumb->min_rtt, dumb->max_rate);
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_release);
 
@@ -85,8 +83,7 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
     struct tcp_sock *tp = tcp_sk(sk);
 
     dumb->rec_count = REC_START;
-    dumb->save_cwnd = tp->snd_cwnd;
-    
+
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = tp->snd_cwnd;
 
@@ -115,13 +112,11 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             dumb->rec_count--;
 
             if (dumb->rec_count == 0) {
-                tp->snd_cwnd = dumb->save_cwnd*dumb->min_rtt/dumb->max_rtt;
+                tp->snd_cwnd = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
                 tp->snd_ssthresh = tp->snd_cwnd;
 
-                dumb->save_cwnd = MIN_CWND;
-                
                 dumb->min_rtt = avg_rtt;
-                dumb->max_rtt = avg_rtt;
+                dumb->max_rate = 0;
             }
         } else if (avg_rtt > target_rtt) {
             tcp_dumb_undo_cwnd(sk);
@@ -130,8 +125,10 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         }
 
         if (avg_rtt > 0) {
+            u64 rate = tp->snd_cwnd*USEC_PER_SEC/avg_rtt;
+
             dumb->min_rtt = min(dumb->min_rtt, avg_rtt);
-            dumb->max_rtt = max(dumb->max_rtt, avg_rtt);
+            dumb->max_rate = max(dumb->max_rate, rate);
         }
 
         dumb->rtt_sum = rs->rtt_us;

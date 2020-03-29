@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     d.cwnd = BDP*5/4;
 
     printf("time,rtt,cwnd,rate,losses,");
-    printf("min_rtt,max_rtt,avg_rtt,target_rtt\n");
+    printf("max_rate,min_rtt,avg_rtt,target_rtt\n");
 
     unsigned long losses = 0;
     double last_print_time = 0;
@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
             last_print_time = time;
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
-            printf("%f,%f,%f,%f\n", d.min_rtt, d.max_rtt,
+            printf("%f,%f,%f,%f\n", d.max_rate*MSS, d.min_rtt,
                    dumb_avg_rtt(&d), dumb_target_rtt(&d));
         }
     }
