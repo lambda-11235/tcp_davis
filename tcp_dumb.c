@@ -134,6 +134,11 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         dumb->rtt_sum = rs->rtt_us;
         dumb->rtt_count = 1;
     } else if (tp->snd_cwnd < tp->snd_ssthresh) {
+        if (rs->rtt_us > 0) {
+            u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
+            dumb->max_rate = max(dumb->max_rate, rate);
+        }
+
         tp->snd_cwnd++;
     }
 
