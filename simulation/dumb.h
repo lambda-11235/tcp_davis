@@ -1,10 +1,12 @@
 
 struct dumb {
     unsigned long cwnd;
+    unsigned long base_cwnd;
     unsigned long ssthresh;
+
     unsigned long rec_count;
 
-    double min_rtt;
+    double min_rtt, min_rtt_save;
     double max_rate;
 
     double rtt_sum;

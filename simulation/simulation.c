@@ -13,7 +13,7 @@ const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = MAX_BW*MAX_RTT/MSS - BDP;
 
 const double RUNTIME = 60;
-const double REPORT_INTERVAL = 0.1;
+const double REPORT_INTERVAL = RUNTIME/1000;
 
 
 int main(int argc, char *argv[])
@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
         if (rtt > MAX_RTT) {
             rtt = MAX_RTT;
             losses++;
-            
+
             dumb_on_loss(&d);
 
             time += rtt/(BDP + BUF_SIZE);
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 
             if (rate > MAX_BW)
                 rate = MAX_BW;
-            
+
             last_print_time = time;
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);

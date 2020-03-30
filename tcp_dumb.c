@@ -18,13 +18,15 @@ static const u8 REC_START = 2;
 
 
 struct dumb {
+    u64 base_cwnd;
+
     // RTTs are in microseconds
     u64 rtt_sum;
     u64 rtt_count;
 
     // max_rate is in mss/second
     u64 max_rate;
-    u32 min_rtt;
+    u32 min_rtt, min_rtt_save;
 
     u8 rec_count;
 };
@@ -38,7 +40,7 @@ static inline u32 target_rtt(struct dumb *dumb)
 
 static inline u32 target_cwnd(struct dumb *dumb)
 {
-    return 2*dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
+    return 2*min(dumb->base_cwnd, dumb->max_rate*dumb->min_rtt/USEC_PER_SEC);
 }
 
 
@@ -50,9 +52,12 @@ void tcp_dumb_init(struct sock *sk)
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 
+    dumb->base_cwnd = MAX_TCP_WINDOW;
+
     dumb->rec_count = 0;
 
     dumb->min_rtt = RTT_INF;
+    dumb->min_rtt_save = RTT_INF;
     dumb->max_rate = 0;
 
     dumb->rtt_sum = 0;
@@ -113,6 +118,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
 
         dumb->min_rtt = min(dumb->min_rtt, (u32) rs->rtt_us);
+        dumb->min_rtt_save = min(dumb->min_rtt_save, (u32) rs->rtt_us);
         dumb->max_rate = max(dumb->max_rate, rate);
     }
 
@@ -124,7 +130,10 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
                 tp->snd_cwnd = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
                 tp->snd_ssthresh = tp->snd_cwnd;
 
-                dumb->min_rtt = avg_rtt;
+                dumb->base_cwnd = tp->snd_cwnd;
+
+                dumb->min_rtt = dumb->min_rtt_save;
+                dumb->min_rtt_save = avg_rtt;
                 dumb->max_rate = 0;
             }
         } else if (avg_rtt > target_rtt(dumb) || tp->snd_cwnd > target_cwnd(dumb)) {
