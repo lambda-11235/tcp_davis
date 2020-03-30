@@ -72,7 +72,6 @@ ax.legend()
 rtt = data.rtt*1000
 minRTT = data.min_rtt*1000
 avgRTT = data.avg_rtt*1000
-targetRTT = data.target_rtt*1000
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
@@ -83,7 +82,6 @@ if args.rtt_limit is not None:
 ax.plot(time, rtt, label="RTT", color="blue")
 ax.plot(time, minRTT, label="Min RTT", color="green")
 ax.plot(time, avgRTT, '--', label="Avg. RTT", color="yellow")
-ax.plot(time, targetRTT, '--', label="Target RTT", color="red")
 
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("RTT (ms)")

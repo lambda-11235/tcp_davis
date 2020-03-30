@@ -14,7 +14,7 @@
 static const u64 MIN_CWND = 2;
 static const u32 MAX_RTT_GAIN = 5000;
 static const u32 RTT_INF = 10000000;
-static const u8 REC_START = 4;
+static const u8 REC_START = 2;
 
 
 struct dumb {
@@ -30,12 +30,15 @@ struct dumb {
 };
 
 
-static u32 dumb_target_rtt(struct dumb *dumb)
+static inline u32 target_rtt(struct dumb *dumb)
 {
-    u32 target_rtt = dumb->min_rtt;
-    target_rtt += min(dumb->min_rtt/2, MAX_RTT_GAIN);
+    return dumb->min_rtt + MAX_RTT_GAIN;
+}
 
-    return target_rtt;
+
+static inline u32 target_cwnd(struct dumb *dumb)
+{
+    return 2*dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
 }
 
 
@@ -82,10 +85,11 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
 
-    dumb->rec_count = REC_START;
-
-    tp->snd_cwnd = MIN_CWND;
+    tp->snd_cwnd /= 2;
     tp->snd_ssthresh = tp->snd_cwnd;
+
+    if (tp->snd_cwnd < MIN_CWND)
+        tp->snd_cwnd = MIN_CWND;
 
     return tp->snd_cwnd;
 }
@@ -105,9 +109,14 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     avg_rtt = dumb->rtt_sum/dumb->rtt_count;
 
-    if (dumb->rtt_count > max(tp->snd_cwnd, rs->prior_in_flight)) {
-        u32 target_rtt = dumb_target_rtt(dumb);
+    if (rs->rtt_us > 0) {
+        u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
 
+        dumb->min_rtt = min(dumb->min_rtt, (u32) rs->rtt_us);
+        dumb->max_rate = max(dumb->max_rate, rate);
+    }
+
+    if (dumb->rtt_count > max(tp->snd_cwnd, rs->prior_in_flight)) {
         if (dumb->rec_count > 0) {
             dumb->rec_count--;
 
@@ -118,27 +127,18 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
                 dumb->min_rtt = avg_rtt;
                 dumb->max_rate = 0;
             }
-        } else if (avg_rtt > target_rtt) {
-            tcp_dumb_undo_cwnd(sk);
+        } else if (avg_rtt > target_rtt(dumb) || tp->snd_cwnd > target_cwnd(dumb)) {
+            dumb->rec_count = REC_START;
+
+            tp->snd_cwnd = MIN_CWND;
+            tp->snd_ssthresh = tp->snd_cwnd;
         } else {
             tp->snd_cwnd++;
-        }
-
-        if (avg_rtt > 0) {
-            u64 rate = tp->snd_cwnd*USEC_PER_SEC/avg_rtt;
-
-            dumb->min_rtt = min(dumb->min_rtt, avg_rtt);
-            dumb->max_rate = max(dumb->max_rate, rate);
         }
 
         dumb->rtt_sum = rs->rtt_us;
         dumb->rtt_count = 1;
     } else if (tp->snd_cwnd < tp->snd_ssthresh) {
-        if (rs->rtt_us > 0) {
-            u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
-            dumb->max_rate = max(dumb->max_rate, rate);
-        }
-
         tp->snd_cwnd++;
     }
 

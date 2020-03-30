@@ -17,4 +17,3 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight);
 void dumb_on_loss(struct dumb *d);
 
 double dumb_avg_rtt(struct dumb *d);
-double dumb_target_rtt(struct dumb *d);
