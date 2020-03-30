@@ -38,9 +38,10 @@ static inline u32 target_rtt(struct dumb *dumb)
 }
 
 
-static inline u32 target_cwnd(struct dumb *dumb)
+static inline u64 target_cwnd(struct dumb *dumb)
 {
-    return 2*min(dumb->base_cwnd, dumb->max_rate*dumb->min_rtt/USEC_PER_SEC);
+    u64 cwnd = min(dumb->base_cwnd, dumb->max_rate*dumb->min_rtt/USEC_PER_SEC);
+    return 2*cwnd;
 }
 
 
@@ -90,11 +91,10 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
 
-    tp->snd_cwnd /= 2;
-    tp->snd_ssthresh = tp->snd_cwnd;
+    dumb->rec_count = REC_START;
 
-    if (tp->snd_cwnd < MIN_CWND)
-        tp->snd_cwnd = MIN_CWND;
+    tp->snd_cwnd = MIN_CWND;
+    tp->snd_ssthresh = tp->snd_cwnd;
 
     return tp->snd_cwnd;
 }
@@ -137,10 +137,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
                 dumb->max_rate = 0;
             }
         } else if (avg_rtt > target_rtt(dumb) || tp->snd_cwnd > target_cwnd(dumb)) {
-            dumb->rec_count = REC_START;
-
-            tp->snd_cwnd = MIN_CWND;
-            tp->snd_ssthresh = tp->snd_cwnd;
+            tcp_dumb_undo_cwnd(sk);
         } else {
             tp->snd_cwnd++;
         }

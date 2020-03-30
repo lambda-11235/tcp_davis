@@ -1,5 +1,7 @@
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "dumb.h"
 
@@ -8,6 +10,7 @@ const unsigned long MSS = 512;
 const double MIN_RTT = 30e-3;
 const double MAX_RTT = 60e-3;
 const double MAX_BW = 100<<17;
+const double LOSS_PROB = 2.5e-6;
 
 const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = MAX_BW*MAX_RTT/MSS - BDP;
@@ -21,7 +24,10 @@ int main(int argc, char *argv[])
     struct dumb d;
     dumb_init(&d);
 
-    d.cwnd = BDP*5/4;
+    srand(time(NULL));
+
+    if ((int) (RAND_MAX*LOSS_PROB) == 0 && LOSS_PROB != 0.0)
+        fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("time,rtt,cwnd,rate,losses,");
     printf("max_rate,min_rtt,avg_rtt\n");
@@ -35,7 +41,7 @@ int main(int argc, char *argv[])
         if (rtt < MIN_RTT)
             rtt = MIN_RTT;
 
-        if (rtt > MAX_RTT) {
+        if (rtt > MAX_RTT || rand() < RAND_MAX*LOSS_PROB) {
             rtt = MAX_RTT;
             losses++;
 

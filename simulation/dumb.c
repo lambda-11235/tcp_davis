@@ -25,7 +25,8 @@ static inline double target_rtt(struct dumb *d)
 
 static inline unsigned long target_cwnd(struct dumb *d)
 {
-    return 2*min(d->base_cwnd, d->max_rate*d->min_rtt);
+    unsigned long cwnd = min(d->base_cwnd, d->max_rate*d->min_rtt);
+    return 2*cwnd;
 }
 
 
@@ -74,10 +75,7 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
                 d->max_rate = 0;
             }
         } else if (avg_rtt > target_rtt(d) || d->cwnd > target_cwnd(d)) {
-            d->rec_count = REC_START;
-
-            d->cwnd = MIN_CWND;
-            d->ssthresh = d->cwnd;
+            dumb_on_loss(d);
         } else {
             d->cwnd++;
         }
@@ -96,7 +94,9 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
 
 void dumb_on_loss(struct dumb *d)
 {
-    d->cwnd /= 2;
+    d->rec_count = REC_START;
+
+    d->cwnd = MIN_CWND;
     d->ssthresh = d->cwnd;
 
     if (d->cwnd < MIN_CWND)
