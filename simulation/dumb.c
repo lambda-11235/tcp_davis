@@ -5,7 +5,7 @@
 
 
 static const unsigned long MIN_CWND = 2;
-static const unsigned long MAX_CWND = 32768*32768;
+static const unsigned long MAX_CWND = 32768;
 
 static const unsigned long REC_START = 2;
 
@@ -86,9 +86,7 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
         d->cwnd++;
     }
 
-
-    if (d->cwnd < MIN_CWND)
-        d->cwnd = MIN_CWND;
+    d->cwnd = min(max(MIN_CWND, d->cwnd), MAX_CWND);
 }
 
 
@@ -98,9 +96,6 @@ void dumb_on_loss(struct dumb *d)
 
     d->cwnd = MIN_CWND;
     d->ssthresh = d->cwnd;
-
-    if (d->cwnd < MIN_CWND)
-        d->cwnd = MIN_CWND;
 }
 
 

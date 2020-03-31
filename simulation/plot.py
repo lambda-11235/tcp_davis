@@ -88,4 +88,17 @@ ax.set_ylabel("RTT (ms)")
 ax.legend()
 
 
+### Rec. Count ###
+recCount = data.rec_count
+
+fig = plt.figure()
+ax = fig.add_subplot(111)
+
+ax.plot(time, recCount, label="Rec. Count", color="blue")
+
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Rec. Count")
+ax.legend()
+
+
 plt.show()

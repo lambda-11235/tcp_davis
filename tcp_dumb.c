@@ -11,18 +11,18 @@
 #include <net/tcp.h>
 
 
-static const u64 MIN_CWND = 2;
+static const u32 MIN_CWND = 2;
 static const u32 MAX_RTT_GAIN = 5000;
 static const u32 RTT_INF = 10000000;
 static const u8 REC_START = 2;
 
 
 struct dumb {
-    u64 base_cwnd;
-
     // RTTs are in microseconds
     u64 rtt_sum;
     u64 rtt_count;
+
+    u32 base_cwnd;
 
     // max_rate is in mss/second
     u64 max_rate;
@@ -38,9 +38,9 @@ static inline u32 target_rtt(struct dumb *dumb)
 }
 
 
-static inline u64 target_cwnd(struct dumb *dumb)
+static inline u32 target_cwnd(struct dumb *dumb)
 {
-    u64 cwnd = min(dumb->base_cwnd, dumb->max_rate*dumb->min_rtt/USEC_PER_SEC);
+    u32 cwnd = min(dumb->base_cwnd, (u32) (dumb->max_rate*dumb->min_rtt/USEC_PER_SEC));
     return 2*cwnd;
 }
 
@@ -149,8 +149,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
     }
 
 
-    if (tp->snd_cwnd < MIN_CWND)
-        tp->snd_cwnd = MIN_CWND;
+    tp->snd_cwnd = min(max(MIN_CWND, tp->snd_cwnd), MAX_TCP_WINDOW);
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 
