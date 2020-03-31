@@ -5,12 +5,14 @@
 
 
 static const unsigned long MIN_CWND = 2;
-static const unsigned long MAX_CWND = 32768;
+static const unsigned long MAX_CWND = 33554432;//32768;
 
 static const unsigned long REC_START = 2;
 
 static const double MAX_RTT_GAIN = 5.0e-3;
 static const double RTT_INF = 10.0;
+
+static const double MAX_CYCLE_TIME = 10.0;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
@@ -25,8 +27,15 @@ static inline double target_rtt(struct dumb *d)
 
 static inline unsigned long target_cwnd(struct dumb *d)
 {
-    unsigned long cwnd = min(d->base_cwnd, d->max_rate*d->min_rtt);
-    return 2*cwnd;
+    unsigned long bdp = min(d->base_cwnd, d->max_rate*d->min_rtt);
+    unsigned long gain_cwnd = bdp*(d->min_rtt + MAX_RTT_GAIN)/d->min_rtt;
+    return min(2*bdp, gain_cwnd);
+}
+
+
+static inline unsigned long cwnd_gain(struct dumb *d)
+{
+    return max(1, d->min_rtt*(target_cwnd(d) - d->base_cwnd)/MAX_CYCLE_TIME);
 }
 
 
@@ -77,7 +86,7 @@ void dumb_on_ack(struct dumb *d, double rtt, unsigned long inflight)
         } else if (avg_rtt > target_rtt(d) || d->cwnd > target_cwnd(d)) {
             dumb_on_loss(d);
         } else {
-            d->cwnd++;
+            d->cwnd += cwnd_gain(d);
         }
 
         d->rtt_sum = rtt;

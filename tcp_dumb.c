@@ -12,8 +12,11 @@
 
 
 static const u32 MIN_CWND = 2;
-static const u32 MAX_RTT_GAIN = 5000;
-static const u32 RTT_INF = 10000000;
+
+static const u32 MAX_RTT_GAIN = 5*USEC_PER_MSEC;
+static const u32 RTT_INF = 10*USEC_PER_SEC;
+static const u32 MAX_CYCLE_TIME = 10*USEC_PER_SEC;
+
 static const u8 REC_START = 2;
 
 
@@ -40,8 +43,20 @@ static inline u32 target_rtt(struct dumb *dumb)
 
 static inline u32 target_cwnd(struct dumb *dumb)
 {
-    u32 cwnd = min(dumb->base_cwnd, (u32) (dumb->max_rate*dumb->min_rtt/USEC_PER_SEC));
-    return 2*cwnd;
+    u32 bdp = min(dumb->base_cwnd, (u32) (dumb->max_rate*dumb->min_rtt/USEC_PER_SEC));
+    u32 gain_cwnd = bdp*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
+    return min(2*bdp, gain_cwnd);
+}
+
+
+/**
+ * Each ACK we increase the snd_cwnd by a certain amount.
+ * This function determines how much we must increase the snd_cwnd by
+ * to reach our maximum snd_cwnd in MAX_CYCLE_TIME.
+ */
+static inline u32 cwnd_gain(struct dumb *dumb)
+{
+    return max(1U, dumb->min_rtt*(target_cwnd(dumb) - dumb->base_cwnd)/MAX_CYCLE_TIME);
 }
 
 
@@ -139,7 +154,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         } else if (avg_rtt > target_rtt(dumb) || tp->snd_cwnd > target_cwnd(dumb)) {
             tcp_dumb_undo_cwnd(sk);
         } else {
-            tp->snd_cwnd++;
+            tp->snd_cwnd += cwnd_gain(dumb);
         }
 
         dumb->rtt_sum = rs->rtt_us;

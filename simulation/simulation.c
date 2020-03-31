@@ -5,12 +5,14 @@
 
 #include "dumb.h"
 
+#define MBPS 131072
+#define GBPS 134217728
 
 const unsigned long MSS = 512;
 const double MIN_RTT = 30e-3;
 const double MAX_RTT = 60e-3;
-const double MAX_BW = 100<<17;
-const double LOSS_PROB = 2.5e-6;
+const double MAX_BW = 10*GBPS;
+const double LOSS_PROB = 0;//2.5e-6;
 
 const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = MAX_BW*MAX_RTT/MSS - BDP;
