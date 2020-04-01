@@ -31,12 +31,6 @@ struct dumb {
 };
 
 
-static inline u32 target_rtt(struct dumb *dumb)
-{
-    return dumb->min_rtt + MAX_RTT_GAIN;
-}
-
-
 static inline u32 target_cwnd(struct dumb *dumb)
 {
     u32 bdp = min(dumb->base_cwnd, (u32) (dumb->max_rate*dumb->min_rtt/USEC_PER_SEC));
