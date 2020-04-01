@@ -21,10 +21,6 @@ static const u8 REC_START = 2;
 
 
 struct dumb {
-    // RTTs are in microseconds
-    u64 rtt_sum;
-    u64 rtt_count;
-
     u32 base_cwnd;
 
     // max_rate is in mss/second
@@ -67,17 +63,15 @@ void tcp_dumb_init(struct sock *sk)
 
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
+    tp->snd_cwnd_cnt = 0;
 
-    dumb->base_cwnd = MAX_TCP_WINDOW;
+    dumb->base_cwnd = tp->snd_cwnd_clamp;
 
     dumb->rec_count = 0;
 
     dumb->min_rtt = RTT_INF;
     dumb->min_rtt_save = RTT_INF;
     dumb->max_rate = 0;
-
-    dumb->rtt_sum = 0;
-    dumb->rtt_count = 0;
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_init);
 
@@ -120,14 +114,10 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
-    u32 avg_rtt;
 
     // We can get multiple ACKs at once, so assume they all have the
     // same RTT
-    dumb->rtt_sum += rs->rtt_us*rs->acked_sacked;
-    dumb->rtt_count += rs->acked_sacked;
-
-    avg_rtt = dumb->rtt_sum/dumb->rtt_count;
+    tp->snd_cwnd_cnt += rs->acked_sacked;
 
     if (rs->rtt_us > 0) {
         u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
@@ -137,7 +127,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         dumb->max_rate = max(dumb->max_rate, rate);
     }
 
-    if (dumb->rtt_count > max(tp->snd_cwnd, rs->prior_in_flight)) {
+    if (tp->snd_cwnd_cnt > max(tp->snd_cwnd, rs->prior_in_flight)) {
         if (dumb->rec_count > 0) {
             dumb->rec_count--;
 
@@ -148,23 +138,23 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
                 dumb->base_cwnd = tp->snd_cwnd;
 
                 dumb->min_rtt = dumb->min_rtt_save;
-                dumb->min_rtt_save = avg_rtt;
+                dumb->min_rtt_save = RTT_INF;
                 dumb->max_rate = 0;
             }
-        } else if (avg_rtt > target_rtt(dumb) || tp->snd_cwnd > target_cwnd(dumb)) {
+        } else if (tp->snd_cwnd > target_cwnd(dumb) || !tcp_is_cwnd_limited(sk)) {
+            // If snd_cwnd is over data being sent by app, then probe
             tcp_dumb_undo_cwnd(sk);
         } else {
             tp->snd_cwnd += cwnd_gain(dumb);
         }
 
-        dumb->rtt_sum = rs->rtt_us;
-        dumb->rtt_count = 1;
-    } else if (tp->snd_cwnd < tp->snd_ssthresh) {
+        tp->snd_cwnd_cnt = 0;
+    } else if (tcp_in_slow_start(tp) && tcp_is_cwnd_limited(sk)) {
         tp->snd_cwnd++;
     }
 
 
-    tp->snd_cwnd = min(max(MIN_CWND, tp->snd_cwnd), MAX_TCP_WINDOW);
+    tp->snd_cwnd = min(max(MIN_CWND, tp->snd_cwnd), tp->snd_cwnd_clamp);
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 

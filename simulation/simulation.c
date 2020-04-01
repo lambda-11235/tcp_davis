@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("time,rtt,cwnd,rate,losses,");
-    printf("max_rate,min_rtt,avg_rtt,rec_count\n");
+    printf("max_rate,min_rtt,rec_count\n");
 
     unsigned long losses = 0;
     double last_print_time = 0;
@@ -65,8 +65,8 @@ int main(int argc, char *argv[])
             last_print_time = time;
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
-            printf("%f,%f,%f,%ld\n", d.max_rate*MSS, d.min_rtt,
-                   dumb_avg_rtt(&d), d.rec_count);
+            printf("%f,%f,%ld\n", d.max_rate*MSS, d.min_rtt,
+                   d.rec_count);
         }
     }
 
