@@ -15,27 +15,41 @@ static const u32 MIN_CWND = 2;
 
 static const u32 MAX_RTT_GAIN = 5*USEC_PER_MSEC;
 static const u32 RTT_INF = 10*USEC_PER_SEC;
-static const u32 MAX_CYCLE_TIME = 10*USEC_PER_SEC;
 
-static const u8 REC_START = 2;
+static const u32 MAX_STABLE_TIME = 4*USEC_PER_SEC;
+static const u32 MAX_GAIN_TIME = 1*USEC_PER_SEC;
+
+static const u16 REC_RTTS = 2;
+static const u16 STABLE_RTTS = 128;
+static const u16 GAIN_RTTS = 32;
 
 
 struct dumb {
-    u32 base_cwnd;
+    u64 last_time;
 
     // max_rate is in mss/second
     u64 max_rate;
+
+    u32 last_rtt;
     u32 min_rtt, min_rtt_save;
 
-    u8 rec_count;
+    u32 base_cwnd;
+    u16 rec_count;
+    u16 stable_count;
 };
+
+
+static inline u32 dumb_bdp(struct dumb *dumb)
+{
+    return dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
+}
 
 
 static inline u32 target_cwnd(struct dumb *dumb)
 {
-    u32 bdp = min(dumb->base_cwnd, (u32) (dumb->max_rate*dumb->min_rtt/USEC_PER_SEC));
-    u32 gain_cwnd = bdp*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
-    return min(2*bdp, gain_cwnd);
+    u32 cwnd = min(dumb->base_cwnd, dumb_bdp(dumb));
+    u32 gain_cwnd = cwnd*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
+    return min(2*cwnd, gain_cwnd);
 }
 
 
@@ -46,7 +60,17 @@ static inline u32 target_cwnd(struct dumb *dumb)
  */
 static inline u32 cwnd_gain(struct dumb *dumb)
 {
-    return max(1U, dumb->min_rtt*(target_cwnd(dumb) - dumb->base_cwnd)/MAX_CYCLE_TIME);
+    u32 final_gain = target_cwnd(dumb) - dumb->base_cwnd;
+    u32 time_limited = dumb->min_rtt*final_gain/MAX_GAIN_TIME;
+    u32 rtt_limited = final_gain/GAIN_RTTS;
+
+    return max(1U, max(time_limited, rtt_limited));
+}
+
+
+static inline u64 dumb_current_time(void)
+{
+    return ktime_get_ns()/NSEC_PER_USEC;
 }
 
 
@@ -57,15 +81,17 @@ void tcp_dumb_init(struct sock *sk)
 
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
-    tp->snd_cwnd_cnt = 0;
 
-    dumb->base_cwnd = tp->snd_cwnd_clamp;
+    dumb->last_time = dumb_current_time();
+    dumb->max_rate = 0;
 
-    dumb->rec_count = 0;
-
+    dumb->last_rtt = 1;
     dumb->min_rtt = RTT_INF;
     dumb->min_rtt_save = RTT_INF;
-    dumb->max_rate = 0;
+
+    dumb->base_cwnd = tp->snd_cwnd_clamp;
+    dumb->rec_count = 0;
+    dumb->stable_count = 0;
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_init);
 
@@ -94,7 +120,8 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
 
-    dumb->rec_count = REC_START;
+    dumb->last_time = dumb_current_time();
+    dumb->rec_count = REC_RTTS;
 
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = tp->snd_cwnd;
@@ -108,25 +135,36 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
-
-    // We can get multiple ACKs at once, so assume they all have the
-    // same RTT
-    tp->snd_cwnd_cnt += rs->acked_sacked;
+    u64 now = dumb_current_time();
 
     if (rs->rtt_us > 0) {
         u64 rate = tp->snd_cwnd*USEC_PER_SEC/rs->rtt_us;
 
+        dumb->max_rate = max(dumb->max_rate, rate);
+
+        dumb->last_rtt = rs->rtt_us;
         dumb->min_rtt = min(dumb->min_rtt, (u32) rs->rtt_us);
         dumb->min_rtt_save = min(dumb->min_rtt_save, (u32) rs->rtt_us);
-        dumb->max_rate = max(dumb->max_rate, rate);
     }
 
-    if (tp->snd_cwnd_cnt > max(tp->snd_cwnd, rs->prior_in_flight)) {
+    if (tcp_in_slow_start(tp)) {
+        tp->snd_cwnd++;
+
+        if (now > dumb->last_time + STABLE_RTTS*dumb->min_rtt
+            || !tcp_is_cwnd_limited(sk)) {
+            tcp_dumb_undo_cwnd(sk);
+        }
+    } else if (now > dumb->last_time + dumb->last_rtt) {
+        dumb->last_time = now;
+
         if (dumb->rec_count > 0) {
             dumb->rec_count--;
 
             if (dumb->rec_count == 0) {
-                tp->snd_cwnd = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
+                dumb->stable_count = min(STABLE_RTTS,
+                                         (u16) (MAX_STABLE_TIME/dumb->min_rtt));
+
+                tp->snd_cwnd = dumb_bdp(dumb) + MIN_CWND;
                 tp->snd_ssthresh = tp->snd_cwnd;
 
                 dumb->base_cwnd = tp->snd_cwnd;
@@ -135,16 +173,14 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
                 dumb->min_rtt_save = RTT_INF;
                 dumb->max_rate = 0;
             }
+        } else if (dumb->stable_count > 0) {
+            dumb->stable_count--;
         } else if (tp->snd_cwnd > target_cwnd(dumb) || !tcp_is_cwnd_limited(sk)) {
             // If snd_cwnd is over data being sent by app, then probe
             tcp_dumb_undo_cwnd(sk);
         } else {
             tp->snd_cwnd += cwnd_gain(dumb);
         }
-
-        tp->snd_cwnd_cnt = 0;
-    } else if (tcp_in_slow_start(tp) && tcp_is_cwnd_limited(sk)) {
-        tp->snd_cwnd++;
     }
 
 
