@@ -30,18 +30,13 @@ static inline unsigned long gain_cwnd(struct dumb *d)
 }
 
 
-static inline unsigned long stable_cwnd(struct dumb *d)
-{
-    return d->max_rate*(d->last_rtt + d->min_rtt)/2;
-}
-
-
 static void drain(struct dumb *d, double time)
 {
     d->mode = DUMB_DRAIN;
     d->trans_time = time;
 
-    d->cwnd = MIN_CWND;
+    d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
+    d->cwnd = d->bdp/2;
     d->ssthresh = d->cwnd;
 }
 
@@ -67,8 +62,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
                  unsigned long inflight)
 {
     if (rtt > 0) {
-        if (d->mode == DUMB_GAIN_2 || d->cwnd < d->ssthresh)
-            d->max_rate = max(d->max_rate, inflight/rtt);
+        d->max_rate = max(d->max_rate, inflight/rtt);
 
         d->last_rtt = rtt;
         d->min_rtt = min(d->min_rtt, rtt);
@@ -95,8 +89,12 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             d->trans_time = time;
 
             d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
-            d->cwnd = stable_cwnd(d);
+            d->cwnd = d->bdp;
             d->ssthresh = d->bdp;
+        } else {
+            d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
+            d->cwnd = d->bdp/2;
+            d->ssthresh = d->cwnd;
         }
     } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
         double timeout = min(MAX_STABLE_TIME, STABLE_RTTS*d->last_rtt);
@@ -106,8 +104,6 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             d->trans_time = time;
 
             d->cwnd = gain_cwnd(d);
-        } else {
-            d->cwnd = stable_cwnd(d);
         }
     } else if (d->mode == DUMB_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {

@@ -49,12 +49,6 @@ static inline u32 gain_cwnd(struct dumb *dumb)
 }
 
 
-static inline u32 stable_cwnd(struct dumb *dumb)
-{
-    return dumb->max_rate*(dumb->last_rtt + dumb->min_rtt)/2/USEC_PER_SEC;
-}
-
-
 static inline u64 dumb_current_time(void)
 {
     return ktime_get_ns()/NSEC_PER_USEC;
@@ -69,7 +63,10 @@ static void dumb_drain(struct sock *sk, u64 now)
     dumb->mode = DUMB_DRAIN;
     dumb->trans_time = now;
 
-    tp->snd_cwnd = MIN_CWND;
+    dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
+    dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
+
+    tp->snd_cwnd = dumb->bdp/2;
     tp->snd_ssthresh = tp->snd_cwnd;
 }
 
@@ -180,12 +177,18 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
             dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
 
-            tp->snd_cwnd = stable_cwnd(dumb);
+            tp->snd_cwnd = dumb->bdp;
             tp->snd_ssthresh = dumb->bdp;
 
             //printk(KERN_DEBUG "tcp_dumb: max_rate = %llu, "
             //       "min_rtt = %u, bdp = %u, gain_cwnd = %u\n",
             //       dumb->max_rate, dumb->min_rtt, dumb->bdp, tp->snd_cwnd);
+        } else {
+            dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
+            dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
+
+            tp->snd_cwnd = dumb->bdp/2;
+            tp->snd_ssthresh = tp->snd_cwnd;
         }
     } else if (dumb->mode == DUMB_RECOVER || dumb->mode == DUMB_STABLE) {
         u64 timeout = min_t(u64, MAX_STABLE_TIME, STABLE_RTTS*dumb->last_rtt);
@@ -195,8 +198,6 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             dumb->trans_time = now;
 
             tp->snd_cwnd = gain_cwnd(dumb);
-        } else {
-            tp->snd_cwnd = stable_cwnd(dumb);
         }
     } else if (dumb->mode == DUMB_GAIN_1) {
         if (now > dumb->trans_time + GAIN_1_RTTS*dumb->last_rtt) {
