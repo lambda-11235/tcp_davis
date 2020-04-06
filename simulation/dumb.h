@@ -1,23 +1,32 @@
 
 #include <stdbool.h>
 
-struct dumb {
-    unsigned long cwnd;
-    unsigned long base_cwnd;
-    unsigned long ssthresh;
+#ifndef _DUMB_H_
+#define _DUMB_H_
 
-    double last_time;
-    unsigned long rec_count;
-    unsigned long stable_count;
+
+enum dumb_mode { DUMB_RECOVER, DUMB_DRAIN, DUMB_STABLE,
+                 DUMB_GAIN_1, DUMB_GAIN_2 };
+
+struct dumb {
+    enum dumb_mode mode;
+    double trans_time;
+
+    unsigned long bdp;
+    unsigned long cwnd;
+    unsigned long ssthresh;
 
     double max_rate;
 
     double last_rtt;
-    double min_rtt, min_rtt_save;
+    double min_rtt, max_rtt;
 };
 
 
 void dumb_init(struct dumb *d, double time);
 void dumb_on_ack(struct dumb *d, double time, double rtt,
-                 bool is_cwnd_limited);
+                 unsigned long inflight);
 void dumb_on_loss(struct dumb *d, double time);
+
+
+#endif /* _DUMB_H_ */

@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description="Plot")
 parser.add_argument('data_file', type=str,
         help="The data file to plot from.")
+parser.add_argument('--cwnd-limit', type=float, nargs=2,
+        help="")
 parser.add_argument('--rate-limit', type=float, nargs=2,
         help="")
 parser.add_argument('--rtt-limit', type=float, nargs=2,
@@ -26,11 +28,16 @@ time = data.time
 
 ### CWND ###
 cwnd = data.cwnd
+bdp = data.bdp
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
+if args.cwnd_limit is not None:
+    ax.set_ylim(args.cwnd_limit[0], args.cwnd_limit[1])
+
 ax.plot(time, cwnd, label="CWND", color="blue")
+ax.plot(time, bdp, "--", label="BDP", color="red")
 
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("CWND (packets)")

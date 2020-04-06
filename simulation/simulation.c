@@ -18,16 +18,16 @@ const unsigned long MSS = 512;
 const double MIN_RTT = 30e-3;
 const double MAX_BW = 10.0*GBPS;
 
-// TODO: Actually take into account application send rate and random
-// loss probability.
-const double APP_RATE = 20.0*GBPS;
-const double LOSS_PROB = 0;//2.5e-6;
+const double APP_RATE = 100.0*GBPS;
+
+const double LOSS_PROB = 0.0;//2.5e-7;
+const int LOSS_RAND_CUTOFF = LOSS_PROB*RAND_MAX;
 
 const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = (bdp_limited ? 1 : 2)*BDP;
 
 const double RUNTIME = 60;
-const double REPORT_INTERVAL = RUNTIME/1000;
+const double REPORT_INTERVAL = RUNTIME/100000;
 
 
 enum event_type { NONE, ARRIVAL, DEPARTURE };
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("time,rtt,cwnd,rate,losses,");
-    printf("max_rate,min_rtt\n");
+    printf("max_rate,min_rtt,bdp\n");
 
     unsigned int last_perc = 0;
     double last_print_time = 0;
@@ -53,8 +53,11 @@ int main(int argc, char *argv[])
     struct packet_buffer bottleneck = packet_buffer_empty;
     double next_bottleneck_time = time;
     unsigned long inflight = 0;
+    unsigned long sent = 0;
+    bool is_cwnd_limited = true;
 
     unsigned long losses = 0;
+    double last_loss_time = 0;
     double rtt = 0;
 
     dumb_init(&d, time);
@@ -64,11 +67,14 @@ int main(int argc, char *argv[])
         struct packet *net_packet = packet_buffer_peek(&network);
         struct packet *bn_packet = packet_buffer_peek(&bottleneck);
 
+        unsigned long app_accrued_packets = APP_RATE*time/MSS;
+
         /*** Caculate next event ***/
         time *= 2;
 
         if (net_packet != NULL) {
             event = ARRIVAL;
+
             time = net_packet->send_time + MIN_RTT;
         }
 
@@ -100,7 +106,7 @@ int main(int argc, char *argv[])
                 dumb_on_loss(&d, time);
             } else {
                 rtt = time - bn_packet->send_time;
-                dumb_on_ack(&d, time, rtt, true);
+                dumb_on_ack(&d, time, rtt, inflight);
             }
 
             next_bottleneck_time = time + MSS/MAX_BW;
@@ -108,19 +114,24 @@ int main(int argc, char *argv[])
         }
 
 
-        while (inflight < d.cwnd) {
+        while (inflight < d.cwnd && sent <= app_accrued_packets) {
             struct packet *p = malloc(sizeof(struct packet));
             p->send_time = time;
-            p->lost = inflight > BDP + BUF_SIZE - 1;
+            p->lost = inflight > BDP + BUF_SIZE - 1 || rand() < LOSS_RAND_CUTOFF;
             p->next = NULL;
 
             packet_buffer_enqueue(&network, p);
 
             inflight++;
+            sent++;
         }
 
+        is_cwnd_limited = inflight < d.cwnd;
+
+
+        /*** Log data ***/
         if (time > last_print_time + REPORT_INTERVAL) {
-            double rate = d.cwnd*MSS/rtt;
+            double rate = inflight*MSS/rtt;
 
             if (rate > MAX_BW)
                 rate = MAX_BW;
@@ -128,7 +139,7 @@ int main(int argc, char *argv[])
             last_print_time = time;
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
-            printf("%f,%f\n", d.max_rate*MSS, d.min_rtt);
+            printf("%f,%f,%lu\n", d.max_rate*MSS, d.min_rtt, d.bdp);
         }
     }
 
