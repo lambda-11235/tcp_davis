@@ -25,8 +25,12 @@ static const double MAX_STABLE_TIME = 5.0;
 
 static inline unsigned long gain_cwnd(struct dumb *d)
 {
-    unsigned long rtt_limited = d->bdp*(d->min_rtt + MAX_RTT_GAIN)/d->min_rtt;
-    return max(d->bdp, min(3*d->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
+    if (d->min_rtt > 0) {
+        unsigned long rtt_limited = d->bdp*(d->min_rtt + MAX_RTT_GAIN)/d->min_rtt;
+        return max(d->bdp, min(3*d->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
+    } else {
+        return 3*d->bdp/2 + MIN_GAIN_CWND;
+    }
 }
 
 

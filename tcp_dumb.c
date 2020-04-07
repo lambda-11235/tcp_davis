@@ -44,8 +44,12 @@ struct dumb {
 
 static inline u32 gain_cwnd(struct dumb *dumb)
 {
-    u32 rtt_limited = dumb->bdp*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
-    return max_t(u32, dumb->bdp, min_t(u32, 3*dumb->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
+    if (dumb->min_rtt > 0) {
+        u32 rtt_limited = dumb->bdp*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
+        return max_t(u32, dumb->bdp, min_t(u32, 3*dumb->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
+    } else {
+        return 3*dumb->bdp/2 + MIN_GAIN_CWND;
+    }
 }
 
 
