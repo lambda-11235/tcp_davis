@@ -4,9 +4,18 @@ import numpy as np
 import pandas as pd
 
 
-def getTestData(inFile):
+def getTestData(inFile, pscheduler):
     with open(inFile) as data:
         pdata = json.load(data)
+
+        if pscheduler:
+            s = pdata['diags']
+
+            # FIXME: This has no guarantee of working
+            s = s[(s.find('\n\n')+2):]
+            s = s[:s.find('\n\n')]
+
+            pdata = json.loads(s)
 
         conns = pdata['start']['connected']
 
@@ -26,11 +35,9 @@ class Data(object):
     :stream: Data from BWCtl's streams.
     """
 
-    def __init__(self, test):
+    def __init__(self, test, pscheduler=False):
         """
         :test: The name of the test to gather information for.
         """
-        testFile = test
-
-        (self.rawTest, self.connections, self.streams) = getTestData(testFile)
+        (self.rawTest, self.connections, self.streams) = getTestData(test, pscheduler)
         startTime = self.rawTest['start']['timestamp']['timesecs']

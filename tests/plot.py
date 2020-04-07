@@ -19,10 +19,12 @@ parser.add_argument('-e', '--output-extension', type=str, default="pdf",
         help="Sets the extension for output files (i.e. pdf, png, etc.).")
 parser.add_argument('-s', '--stream', type=int, default=0,
         help="Select the iperf stream to use.")
+parser.add_argument('--ps', action='store_true',
+        help="Read a pschedular output.")
 args = parser.parse_args()
 
 
-data = Data(args.test)
+data = Data(args.test, args.ps)
 stream = data.streams[args.stream]
 
 stream.sort_values('start', inplace=True)
