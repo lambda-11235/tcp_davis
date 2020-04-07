@@ -40,8 +40,8 @@ do
         sysctl net.ipv4.tcp_congestion_control=$cc
 
         case $TOOL in
-            "iperf3" ) iperf3 -t 60 -i 0.1 -c $DEST -P $flows --json > $DIR/$cc.json;;
-            "pschedular" ) echo "pschedular unimplemented"; exit 1;;
+            "iperf3" ) iperf3 -t 60 -c $DEST -P $flows --json > $DIR/$cc.json;;
+            "pschedular" ) pscheduler task --tool iperf3 --format=json --quiet throughput -d PT1M -P $flows --dest $DEST > $DIR/$cc.json;;
             * ) echo "Unrecognized tool"; exit 1;;
         esac
     done
