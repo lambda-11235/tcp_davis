@@ -13,9 +13,9 @@ TOOL=$1
 OUTDIR=`realpath $2`
 DEST=$3
 
-if [ $TOOL != "iperf3" ] && [ $TOOL != "pschedular" ]
+if [ $TOOL != "iperf3" ] && [ $TOOL != "pscheduler" ]
 then
-    echo "TOOL must be one of [iperf3, pschedular]"
+    echo "TOOL must be one of [iperf3, pscheduler]"
     exit 1
 fi
 
@@ -41,7 +41,7 @@ do
 
         case $TOOL in
             "iperf3" ) iperf3 -t 60 -c $DEST -P $flows --json > $DIR/$cc.json;;
-            "pschedular" ) pscheduler task --tool iperf3 --format=json --quiet throughput -d PT1M -P $flows --dest $DEST > $DIR/$cc.json;;
+            "pscheduler" ) pscheduler task --tool iperf3 --format=json --quiet throughput -d PT1M -P $flows --dest $DEST > $DIR/$cc.json;;
             * ) echo "Unrecognized tool"; exit 1;;
         esac
     done
