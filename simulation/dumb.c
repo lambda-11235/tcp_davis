@@ -7,15 +7,12 @@
 static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
-static const unsigned long REC_RTTS = 2;
+static const unsigned long DRAIN_RTTS = 2;
 static const unsigned long STABLE_RTTS = 32;
 static const unsigned long GAIN_1_RTTS = 2;
 static const unsigned long GAIN_2_RTTS = 2;
 
-static const double MAX_RTT_GAIN = 5.0e-3;
 static const double RTT_INF = 10.0;
-
-static const double MAX_STABLE_TIME = 5.0;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
@@ -79,8 +76,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             unsigned long new_bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
             d->trans_time = time;
 
-            if (d->max_rtt > d->min_rtt + min(d->min_rtt/2, MAX_RTT_GAIN)
-                || d->bdp == new_bdp) {
+            if (d->max_rtt > 3*d->min_rtt/2 || d->bdp == new_bdp) {
                 drain(d, time);
             } else {
                 d->bdp = new_bdp;
@@ -88,7 +84,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             }
         }
     } else if (d->mode == DUMB_DRAIN) {
-        if (time > d->trans_time + REC_RTTS*d->last_rtt) {
+        if (time > d->trans_time + DRAIN_RTTS*d->last_rtt) {
             d->mode = DUMB_STABLE;
             d->trans_time = time;
 
@@ -101,9 +97,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             d->ssthresh = d->cwnd;
         }
     } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
-        double timeout = min(MAX_STABLE_TIME, STABLE_RTTS*d->last_rtt);
-
-        if (time > d->trans_time + timeout) {
+        if (time > d->trans_time + STABLE_RTTS*d->last_rtt) {
             d->mode = DUMB_GAIN_1;
             d->trans_time = time;
 

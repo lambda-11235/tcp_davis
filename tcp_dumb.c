@@ -13,15 +13,12 @@
 
 static const u32 MIN_CWND = 4;
 
-static const u32 REC_RTTS = 2;
+static const u32 DRAIN_RTTS = 2;
 static const u32 STABLE_RTTS = 32;
 static const u32 GAIN_1_RTTS = 2;
 static const u32 GAIN_2_RTTS = 2;
 
-static const u32 MAX_RTT_GAIN = 5*USEC_PER_MSEC;
 static const u32 RTT_INF = 10*USEC_PER_SEC;
-
-static const u32 MAX_STABLE_TIME = 5*USEC_PER_SEC;
 
 
 enum dumb_mode { DUMB_RECOVER, DUMB_DRAIN, DUMB_STABLE,
@@ -157,8 +154,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 
             dumb->trans_time = now;
 
-            if (dumb->max_rtt > dumb->min_rtt + min_t(u32, dumb->min_rtt/2, MAX_RTT_GAIN)
-                || dumb->bdp == new_bdp) {
+            if (dumb->max_rtt > 3*dumb->min_rtt/2 || dumb->bdp == new_bdp) {
                 dumb_drain(sk, now);
             } else {
                 dumb->bdp = new_bdp;
@@ -166,7 +162,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             }
         }
     } else if (dumb->mode == DUMB_DRAIN) {
-        if (now > dumb->trans_time + REC_RTTS*dumb->last_rtt) {
+        if (now > dumb->trans_time + DRAIN_RTTS*dumb->last_rtt) {
             dumb->mode = DUMB_STABLE;
             dumb->trans_time = now;
 
@@ -187,9 +183,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             tp->snd_ssthresh = tp->snd_cwnd;
         }
     } else if (dumb->mode == DUMB_RECOVER || dumb->mode == DUMB_STABLE) {
-        u64 timeout = min_t(u64, MAX_STABLE_TIME, STABLE_RTTS*dumb->last_rtt);
-
-        if (now > dumb->trans_time + timeout) {
+        if (now > dumb->trans_time + STABLE_RTTS*dumb->last_rtt) {
             dumb->mode = DUMB_GAIN_1;
             dumb->trans_time = now;
 
