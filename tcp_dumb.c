@@ -11,11 +11,10 @@
 #include <net/tcp.h>
 
 
-static const u32 MIN_CWND = 2;
-static const u32 MIN_GAIN_CWND = 2;
+static const u32 MIN_CWND = 4;
 
 static const u32 REC_RTTS = 2;
-static const u32 STABLE_RTTS = 128;
+static const u32 STABLE_RTTS = 32;
 static const u32 GAIN_1_RTTS = 2;
 static const u32 GAIN_2_RTTS = 2;
 
@@ -44,12 +43,7 @@ struct dumb {
 
 static inline u32 gain_cwnd(struct dumb *dumb)
 {
-    if (dumb->min_rtt > 0) {
-        u32 rtt_limited = dumb->bdp*(dumb->min_rtt + MAX_RTT_GAIN)/dumb->min_rtt;
-        return max_t(u32, dumb->bdp, min_t(u32, 3*dumb->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
-    } else {
-        return 3*dumb->bdp/2 + MIN_GAIN_CWND;
-    }
+    return 3*dumb->bdp/2;
 }
 
 
@@ -120,12 +114,10 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
     u64 now = dumb_current_time();
 
     if (dumb->mode != DUMB_RECOVER) {
-        u32 rtt_limited = dumb->bdp*dumb->min_rtt/(dumb->min_rtt + MAX_RTT_GAIN);
-
         dumb->mode = DUMB_RECOVER;
         dumb->trans_time = now;
 
-        dumb->bdp = max_t(u32, MIN_CWND, max_t(u32, 2*dumb->bdp/3, rtt_limited));
+        dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp/2);
         tp->snd_cwnd = dumb->bdp;
         tp->snd_ssthresh = dumb->bdp;
 

@@ -4,12 +4,11 @@
 #include "dumb.h"
 
 
-static const unsigned long MIN_CWND = 2;
+static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
-static const unsigned long MIN_GAIN_CWND = 2;
 
 static const unsigned long REC_RTTS = 2;
-static const unsigned long STABLE_RTTS = 128;
+static const unsigned long STABLE_RTTS = 32;
 static const unsigned long GAIN_1_RTTS = 2;
 static const unsigned long GAIN_2_RTTS = 2;
 
@@ -25,12 +24,13 @@ static const double MAX_STABLE_TIME = 5.0;
 
 static inline unsigned long gain_cwnd(struct dumb *d)
 {
-    if (d->min_rtt > 0) {
-        unsigned long rtt_limited = d->bdp*(d->min_rtt + MAX_RTT_GAIN)/d->min_rtt;
-        return max(d->bdp, min(3*d->bdp/2, rtt_limited)) + MIN_GAIN_CWND;
-    } else {
-        return 3*d->bdp/2 + MIN_GAIN_CWND;
-    }
+    return 3*d->bdp/2;
+}
+
+
+static inline unsigned long drain_cwnd(struct dumb *d)
+{
+    return d->bdp/2;
 }
 
 
@@ -40,7 +40,7 @@ static void drain(struct dumb *d, double time)
     d->trans_time = time;
 
     d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
-    d->cwnd = d->bdp/2;
+    d->cwnd = drain_cwnd(d);
     d->ssthresh = d->cwnd;
 }
 
@@ -97,7 +97,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             d->ssthresh = d->bdp;
         } else {
             d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
-            d->cwnd = d->bdp/2;
+            d->cwnd = drain_cwnd(d);
             d->ssthresh = d->cwnd;
         }
     } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
@@ -135,12 +135,10 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 void dumb_on_loss(struct dumb *d, double time)
 {
     if (d->mode != DUMB_RECOVER) {
-        unsigned long rtt_limited = d->bdp*d->min_rtt/(d->min_rtt + MAX_RTT_GAIN);
-
         d->mode = DUMB_RECOVER;
         d->trans_time = time;
 
-        d->bdp = max(MIN_CWND, max(2*d->bdp/3, rtt_limited));
+        d->bdp = max(MIN_CWND, d->bdp/2);
         d->cwnd = d->bdp;
         d->ssthresh = d->bdp;
 

@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
     unsigned long sent = 0;
     bool is_cwnd_limited = true;
 
+    double rate_sent = 0;
     unsigned long losses = 0;
     double last_loss_time = 0;
     double rtt = 0;
@@ -122,6 +123,8 @@ int main(int argc, char *argv[])
 
             packet_buffer_enqueue(&network, p);
 
+            rate_sent += MSS;
+
             inflight++;
             sent++;
         }
@@ -131,12 +134,10 @@ int main(int argc, char *argv[])
 
         /*** Log data ***/
         if (time > last_print_time + REPORT_INTERVAL) {
-            double rate = inflight*MSS/rtt;
-
-            if (rate > MAX_BW)
-                rate = MAX_BW;
-
+            double rate = rate_sent/(time - last_print_time);
+            rate_sent = 0;
             last_print_time = time;
+
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
             printf("%f,%f,%lu\n", d.max_rate*MSS, d.min_rtt, d.bdp);
