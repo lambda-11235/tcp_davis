@@ -27,7 +27,7 @@ const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = (bdp_limited ? 1 : 2)*BDP;
 
 const double RUNTIME = 60;
-const double REPORT_INTERVAL = RUNTIME/100000;
+const double REPORT_INTERVAL = MIN_RTT;
 
 
 enum event_type { NONE, ARRIVAL, DEPARTURE };

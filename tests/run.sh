@@ -41,7 +41,7 @@ do
 
         case $TOOL in
             "iperf3" ) iperf3 -t 60 -c $DEST -P $flows --json > $DIR/$cc.json;;
-            "pscheduler" ) pscheduler task --tool iperf3 --format=json --quiet throughput -d PT1M -P $flows --dest $DEST | head -n1 > $DIR/$cc.json;;
+            "pscheduler" ) pscheduler task --tool iperf3 --format=json --quiet throughput -t PT1M -P $flows --dest $DEST | head -n1 > $DIR/$cc.json;;
             * ) echo "Unrecognized tool"; exit 1;;
         esac
     done
