@@ -11,7 +11,7 @@
 #include <net/tcp.h>
 
 
-static const u32 MIN_CWND = 4;
+static const u32 MIN_CWND = 2;
 
 static const u32 REC_RTTS = 2;
 static const u32 DRAIN_RTTS = 2;
@@ -22,7 +22,7 @@ static const u32 GAIN_2_RTTS = 2;
 static const unsigned long MIN_INC_FACTOR = 2;
 static const unsigned long MAX_INC_FACTOR = 128;
 
-static const u32 RTT_INF = 10*USEC_PER_SEC;
+static const u32 RTT_INF = U32_MAX;
 
 
 enum dumb_mode { DUMB_RECOVER, DUMB_DRAIN, DUMB_STABLE,

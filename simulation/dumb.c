@@ -1,10 +1,11 @@
 
+#include <limits.h>
 #include <stdio.h>
 
 #include "dumb.h"
 
 
-static const unsigned long MIN_CWND = 4;
+static const unsigned long MIN_CWND = 2;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
 static const unsigned long REC_RTTS = 2;
@@ -16,7 +17,7 @@ static const unsigned long GAIN_2_RTTS = 2;
 static const unsigned long MIN_INC_FACTOR = 2;
 static const unsigned long MAX_INC_FACTOR = 128;
 
-static const double RTT_INF = 10.0;
+static const double RTT_INF = ULONG_MAX;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
