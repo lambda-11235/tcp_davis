@@ -27,7 +27,7 @@ const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
 const unsigned long BUF_SIZE = (bdp_limited ? 1 : 2)*BDP;
 
 const double RUNTIME = 60;
-const double REPORT_INTERVAL = MIN_RTT;
+const double REPORT_INTERVAL = MIN_RTT/8;
 
 
 enum event_type { NONE, ARRIVAL, DEPARTURE };
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("time,rtt,cwnd,rate,losses,");
-    printf("max_rate,min_rtt,bdp\n");
+    printf("max_rate,min_rtt,bdp,mode\n");
 
     unsigned int last_perc = 0;
     double last_print_time = 0;
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
-            printf("%f,%f,%lu\n", d.max_rate*MSS, d.min_rtt, d.bdp);
+            printf("%f,%f,%lu,%u\n", d.max_rate*MSS, d.min_rtt, d.bdp, d.mode);
         }
     }
 

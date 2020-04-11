@@ -93,4 +93,17 @@ ax.set_ylabel("RTT (ms)")
 ax.legend()
 
 
+### Mode ###
+mode = data['mode']
+
+fig = plt.figure()
+ax = fig.add_subplot(111)
+
+ax.plot(time, mode, label="Mode", color="blue")
+
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Mode")
+ax.legend()
+
+
 plt.show()

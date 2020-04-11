@@ -13,10 +13,14 @@
 
 static const u32 MIN_CWND = 4;
 
+static const u32 REC_RTTS = 2;
 static const u32 DRAIN_RTTS = 2;
 static const u32 STABLE_RTTS = 32;
 static const u32 GAIN_1_RTTS = 2;
 static const u32 GAIN_2_RTTS = 2;
+
+static const unsigned long MIN_INC_FACTOR = 2;
+static const unsigned long MAX_INC_FACTOR = 128;
 
 static const u32 RTT_INF = 10*USEC_PER_SEC;
 
@@ -31,6 +35,8 @@ struct dumb {
     // max_rate is in mss/second
     u64 max_rate;
 
+    u32 inc_factor;
+
     u32 last_rtt;
     u32 min_rtt, max_rtt;
 
@@ -40,7 +46,18 @@ struct dumb {
 
 static inline u32 gain_cwnd(struct dumb *dumb)
 {
-    return 3*dumb->bdp/2;
+    u32 cwnd;
+
+    dumb->inc_factor = clamp_t(u32, MIN_INC_FACTOR, dumb->inc_factor, MAX_INC_FACTOR);
+    cwnd = (dumb->inc_factor + 1)*dumb->bdp/dumb->inc_factor;
+
+    return max_t(u32, dumb->bdp + MIN_CWND, cwnd);
+}
+
+
+static inline u32 drain_cwnd(struct dumb *dumb)
+{
+    return dumb->bdp/2;
 }
 
 
@@ -61,7 +78,7 @@ static void dumb_drain(struct sock *sk, u64 now)
     dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
     dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
 
-    tp->snd_cwnd = dumb->bdp/2;
+    tp->snd_cwnd = drain_cwnd(dumb);
     tp->snd_ssthresh = tp->snd_cwnd;
 }
 
@@ -79,6 +96,8 @@ void tcp_dumb_init(struct sock *sk)
 
     dumb->bdp = MAX_TCP_WINDOW;
 
+    dumb->inc_factor = 2;
+
     dumb->max_rate = 0;
 
     dumb->last_rtt = 1;
@@ -95,7 +114,7 @@ void tcp_dumb_release(struct sock *sk)
 EXPORT_SYMBOL_GPL(tcp_dumb_release);
 
 
-static inline u32 tcp_dumb_ssthresh(struct sock *sk)
+u32 tcp_dumb_ssthresh(struct sock *sk)
 {
     struct tcp_sock *tp = tcp_sk(sk);
 
@@ -104,24 +123,30 @@ static inline u32 tcp_dumb_ssthresh(struct sock *sk)
 EXPORT_SYMBOL_GPL(tcp_dumb_ssthresh);
 
 
-static u32 tcp_dumb_undo_cwnd(struct sock *sk)
+u32 tcp_dumb_undo_cwnd(struct sock *sk)
 {
+    // TODO: Does this get called on ECN CE event?
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
     u64 now = dumb_current_time();
 
-    if (dumb->mode != DUMB_RECOVER) {
+    if ((dumb->mode == DUMB_GAIN_1 || dumb->mode == DUMB_GAIN_2)
+        && dumb->inc_factor < MAX_INC_FACTOR) {
+        dumb->inc_factor *= 2;
+
         dumb->mode = DUMB_RECOVER;
         dumb->trans_time = now;
 
-        dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp/2);
         tp->snd_cwnd = dumb->bdp;
         tp->snd_ssthresh = dumb->bdp;
+    } else if (tcp_in_slow_start(tp)) {
+        dumb->bdp = max(MIN_CWND, dumb->bdp/2);
 
-        dumb->max_rate = 0;
+        dumb->mode = DUMB_RECOVER;
+        dumb->trans_time = now;
 
-        dumb->min_rtt = RTT_INF;
-        dumb->max_rtt = 0;
+        tp->snd_cwnd = dumb->bdp;
+        tp->snd_ssthresh = dumb->bdp;
     }
 
     return tp->snd_cwnd;
@@ -129,7 +154,7 @@ static u32 tcp_dumb_undo_cwnd(struct sock *sk)
 EXPORT_SYMBOL_GPL(tcp_dumb_undo_cwnd);
 
 
-static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
+void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
@@ -172,6 +197,8 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             tp->snd_cwnd = dumb->bdp;
             tp->snd_ssthresh = dumb->bdp;
 
+            dumb->inc_factor--;
+
             //printk(KERN_DEBUG "tcp_dumb: max_rate = %llu, "
             //       "min_rtt = %u, bdp = %u, gain_cwnd = %u\n",
             //       dumb->max_rate, dumb->min_rtt, dumb->bdp, tp->snd_cwnd);
@@ -179,11 +206,13 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
             dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
             dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
 
-            tp->snd_cwnd = dumb->bdp/2;
+            tp->snd_cwnd = drain_cwnd(dumb);
             tp->snd_ssthresh = tp->snd_cwnd;
         }
     } else if (dumb->mode == DUMB_RECOVER || dumb->mode == DUMB_STABLE) {
-        if (now > dumb->trans_time + STABLE_RTTS*dumb->last_rtt) {
+        unsigned long rtts = dumb->mode == DUMB_RECOVER ? REC_RTTS : STABLE_RTTS;
+
+        if (now > dumb->trans_time + rtts*dumb->last_rtt) {
             dumb->mode = DUMB_GAIN_1;
             dumb->trans_time = now;
 
@@ -210,7 +239,7 @@ static void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         dumb_drain(sk, now);
     }
 
-    tp->snd_cwnd = min_t(u32, max_t(u32, MIN_CWND, tp->snd_cwnd), MAX_TCP_WINDOW);
+    tp->snd_cwnd = clamp_t(u32, tp->snd_cwnd, MIN_CWND, MAX_TCP_WINDOW);
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 

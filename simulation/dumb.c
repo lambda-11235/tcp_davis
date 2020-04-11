@@ -7,21 +7,31 @@
 static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
+static const unsigned long REC_RTTS = 2;
 static const unsigned long DRAIN_RTTS = 2;
 static const unsigned long STABLE_RTTS = 32;
 static const unsigned long GAIN_1_RTTS = 2;
 static const unsigned long GAIN_2_RTTS = 2;
+
+static const unsigned long MIN_INC_FACTOR = 2;
+static const unsigned long MAX_INC_FACTOR = 128;
 
 static const double RTT_INF = 10.0;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
 #define max(x, y) ((x) > (y) ? (x) : (y))
+#define clamp(x, mn, mx) (min(max((x), (mn)), (mx)))
 
 
 static inline unsigned long gain_cwnd(struct dumb *d)
 {
-    return 3*d->bdp/2;
+    unsigned long cwnd;
+
+    d->inc_factor = clamp(d->inc_factor, MIN_INC_FACTOR, MAX_INC_FACTOR);
+    cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
+
+    return max(d->bdp + MIN_CWND, cwnd);
 }
 
 
@@ -50,6 +60,8 @@ void dumb_init(struct dumb *d, double time)
     d->bdp = MAX_CWND;
     d->cwnd = MIN_CWND;
     d->ssthresh = MAX_CWND;
+
+    d->inc_factor = 2;
 
     d->max_rate = 0;
 
@@ -91,13 +103,17 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
             d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
             d->cwnd = d->bdp;
             d->ssthresh = d->bdp;
+
+            d->inc_factor--;
         } else {
             d->bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
             d->cwnd = drain_cwnd(d);
             d->ssthresh = d->cwnd;
         }
     } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
-        if (time > d->trans_time + STABLE_RTTS*d->last_rtt) {
+        unsigned long rtts = d->mode == DUMB_RECOVER ? REC_RTTS : STABLE_RTTS;
+
+        if (time > d->trans_time + rtts*d->last_rtt) {
             d->mode = DUMB_GAIN_1;
             d->trans_time = time;
 
@@ -122,23 +138,28 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
         drain(d, time);
     }
 
-    d->cwnd = min(max(MIN_CWND, d->cwnd), MAX_CWND);
+    d->cwnd = clamp(d->cwnd, MIN_CWND, MAX_CWND);
 }
 
 
 void dumb_on_loss(struct dumb *d, double time)
 {
-    if (d->mode != DUMB_RECOVER) {
+    if ((d->mode == DUMB_GAIN_1 || d->mode == DUMB_GAIN_2)
+        && d->inc_factor < MAX_INC_FACTOR) {
+        d->inc_factor *= 2;
+
         d->mode = DUMB_RECOVER;
         d->trans_time = time;
 
-        d->bdp = max(MIN_CWND, d->bdp/2);
         d->cwnd = d->bdp;
         d->ssthresh = d->bdp;
+    } else if (d->cwnd < d->ssthresh) {
+        d->bdp = max(MIN_CWND, d->bdp/2);
 
-        d->max_rate = 0;
+        d->mode = DUMB_RECOVER;
+        d->trans_time = time;
 
-        d->min_rtt = RTT_INF;
-        d->max_rtt = 0;
+        d->cwnd = d->bdp;
+        d->ssthresh = d->bdp;
     }
 }

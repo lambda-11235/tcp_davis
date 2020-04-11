@@ -16,6 +16,8 @@ struct dumb {
     unsigned long cwnd;
     unsigned long ssthresh;
 
+    unsigned long inc_factor;
+
     double max_rate;
 
     double last_rtt;
