@@ -9,8 +9,12 @@ enum dumb_mode { DUMB_RECOVER, DUMB_STABLE,
                  DUMB_GAIN_1, DUMB_GAIN_2,
                  DUMB_DRAIN };
 
+enum dumb_loss_mode { DUMB_NO_LOSS, DUMB_LOSS_BACKOFF,
+                      DUMB_LOSS };
+
 struct dumb {
     enum dumb_mode mode;
+    enum dumb_loss_mode loss_mode;
     double trans_time;
 
     unsigned long bdp;

@@ -41,8 +41,12 @@ static inline unsigned long gain_cwnd(struct dumb *d)
 
 static inline unsigned long drain_cwnd(struct dumb *d)
 {
-    unsigned long cwnd = (d->inc_factor - 1)*d->bdp/d->inc_factor;
-    return max(MIN_CWND, cwnd);
+    if (d->loss_mode == DUMB_LOSS) {
+        return MIN_CWND;
+    } else {
+        unsigned long cwnd = (d->inc_factor - 1)*d->bdp/d->inc_factor;
+        return max(MIN_CWND, cwnd);
+    }
 }
 
 
@@ -63,6 +67,11 @@ static void enter_stable(struct dumb *d, double time)
 {
     d->mode = DUMB_STABLE;
     d->trans_time = time;
+
+    if (d->loss_mode == DUMB_LOSS)
+        d->loss_mode = DUMB_LOSS_BACKOFF;
+    else if (d->loss_mode == DUMB_LOSS_BACKOFF)
+        d->loss_mode = DUMB_NO_LOSS;
 
     d->bdp = d->max_rate*d->min_rtt;
     d->bdp = max(MIN_CWND, d->bdp);
@@ -199,9 +208,8 @@ void dumb_on_loss(struct dumb *d, double time)
     } else if (in_slow_start(d)) {
         d->bdp = max(MIN_CWND, d->bdp/2);
         enter_recovery(d, time);
-    } else if (d->mode == DUMB_STABLE) {
-        enter_recovery(d, time);
-
-        d->cwnd = MIN_CWND;
     }
+
+    if (d->loss_mode == DUMB_NO_LOSS)
+        d->loss_mode = DUMB_LOSS;
 }

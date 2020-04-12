@@ -29,8 +29,12 @@ enum dumb_mode { DUMB_RECOVER, DUMB_STABLE,
                  DUMB_GAIN_1, DUMB_GAIN_2,
                  DUMB_DRAIN };
 
+enum dumb_loss_mode { DUMB_NO_LOSS, DUMB_LOSS_BACKOFF,
+                      DUMB_LOSS };
+
 struct dumb {
     enum dumb_mode mode;
+    enum dumb_loss_mode loss_mode;
     u64 trans_time;
 
     // max_rate is in mss/second
@@ -54,12 +58,16 @@ static inline u32 gain_cwnd(struct dumb *dumb)
 
 static inline u32 drain_cwnd(struct dumb *dumb)
 {
-    // It's important not to do something like divide by 2.
-    // We decrease the same amount as we increase for gain_cwnd.
-    // This is done so that we do not overwhelm the buffer when
-    // switching back to STABLE mode.
-    u32 cwnd = (dumb->inc_factor - 1)*dumb->bdp/dumb->inc_factor;
-    return max_t(u32, MIN_CWND, cwnd);
+    if (dumb->loss_mode == DUMB_LOSS) {
+        return MIN_CWND;
+    } else {
+        // It's important not to do something like divide by 2.
+        // We decrease the same amount as we increase for gain_cwnd.
+        // This is done so that we do not overwhelm the buffer when
+        // switching back to STABLE mode.
+        u32 cwnd = (dumb->inc_factor - 1)*dumb->bdp/dumb->inc_factor;
+        return max_t(u32, MIN_CWND, cwnd);
+    }
 }
 
 
@@ -92,6 +100,11 @@ static void dumb_enter_stable(struct sock *sk, u64 now)
 
     dumb->mode = DUMB_STABLE;
     dumb->trans_time = now;
+
+    if (dumb->loss_mode == DUMB_LOSS)
+        dumb->loss_mode = DUMB_LOSS_BACKOFF;
+    else if (dumb->loss_mode == DUMB_LOSS_BACKOFF)
+        dumb->loss_mode = DUMB_NO_LOSS;
 
     dumb->bdp = dumb->max_rate*dumb->min_rtt/USEC_PER_SEC;
     dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
@@ -211,6 +224,9 @@ u32 tcp_dumb_undo_cwnd(struct sock *sk)
         dumb->bdp = max(MIN_CWND, dumb->bdp/2);
         dumb_enter_recovery(sk, now);
     }
+
+    if (dumb->loss_mode == DUMB_NO_LOSS)
+        dumb->loss_mode = DUMB_LOSS;
 
     return tp->snd_cwnd;
 }
