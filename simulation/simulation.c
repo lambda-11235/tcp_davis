@@ -12,19 +12,20 @@
 #define GBPS 134217728
 
 const unsigned long MSS = 512;
-const double MIN_RTT = 30e-3;
-const double MAX_BW = 10.0*GBPS;
-
-const double APP_RATE = 2*MAX_BW;
 
 const double LOSS_PROB = 0.0;//2.5e-7;
 const int LOSS_RAND_CUTOFF = LOSS_PROB*RAND_MAX;
 
-const unsigned long BDP = MAX_BW*MIN_RTT/MSS;
-const unsigned long BUF_SIZE = BDP;
+inline double min_rtt(double t) { return 30e-3; }
+inline double max_bw(double t) { return 10.0*GBPS; }
+
+inline double app_rate(double t) { return 2*max_bw(t); }
+
+inline unsigned long bdp(double t) { return max_bw(t)*min_rtt(t)/MSS; }
+inline unsigned long buf_size(double t) { return bdp(t); }
 
 const double RUNTIME = 60;
-const double REPORT_INTERVAL = MIN_RTT;
+inline double report_interval(double t) { return min_rtt(t); }
 
 
 enum event_type { NONE, SEND, ARRIVAL, DEPARTURE };
@@ -73,7 +74,7 @@ int main(int argc, char *argv[])
         if (net_packet != NULL) {
             event = ARRIVAL;
 
-            time = net_packet->send_time + MIN_RTT;
+            time = net_packet->send_time + min_rtt(net_packet->send_time);
         }
 
         if (bn_packet != NULL && next_bottleneck_time < time) {
@@ -96,17 +97,17 @@ int main(int argc, char *argv[])
 
         if (event == ARRIVAL) {
             if (bn_packet == NULL)
-                next_bottleneck_time = time + MSS/MAX_BW;
+                next_bottleneck_time = time + MSS/max_bw(time);
 
             net_packet = packet_buffer_dequeue(&network);
 
-            if (bottleneck.length >= BUF_SIZE || rand() < LOSS_RAND_CUTOFF)
+            if (bottleneck.length >= buf_size(time) || rand() < LOSS_RAND_CUTOFF)
                 packet_buffer_enqueue(&lost, net_packet);
             else
                 packet_buffer_enqueue(&bottleneck, net_packet);
         } else if (event == DEPARTURE) {
             if (inflight >= d.cwnd)
-                next_send_time = time + MSS/MAX_BW;
+                next_send_time = time + MSS/app_rate(time);
 
             bn_packet = packet_buffer_dequeue(&bottleneck);
             inflight--;
@@ -114,7 +115,7 @@ int main(int argc, char *argv[])
             rtt = time - bn_packet->send_time;
             dumb_on_ack(&d, time, rtt, inflight);
 
-            next_bottleneck_time = time + MSS/MAX_BW;
+            next_bottleneck_time = time + MSS/max_bw(time);
             free(bn_packet);
         } else if (event == SEND) {
             struct packet *p = malloc(sizeof(struct packet));
@@ -126,7 +127,7 @@ int main(int argc, char *argv[])
             rate_sent += MSS;
             inflight++;
 
-            next_send_time = time + MSS/APP_RATE;
+            next_send_time = time + MSS/app_rate(time);
         }
 
 
@@ -142,7 +143,7 @@ int main(int argc, char *argv[])
 
 
         /*** Log data ***/
-        if (time > last_print_time + REPORT_INTERVAL) {
+        if (time > last_print_time + report_interval(time)) {
             double rate = rate_sent/(time - last_print_time);
             rate_sent = 0;
             last_print_time = time;

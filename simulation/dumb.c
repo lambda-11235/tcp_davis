@@ -199,5 +199,9 @@ void dumb_on_loss(struct dumb *d, double time)
     } else if (in_slow_start(d)) {
         d->bdp = max(MIN_CWND, d->bdp/2);
         enter_recovery(d, time);
+    } else if (d->mode == DUMB_STABLE) {
+        enter_recovery(d, time);
+
+        d->cwnd = MIN_CWND;
     }
 }
