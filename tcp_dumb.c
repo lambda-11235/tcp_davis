@@ -303,14 +303,15 @@ EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 
 
 static struct tcp_congestion_ops tcp_dumb __read_mostly = {
-    .init		= tcp_dumb_init,
-    .release	= tcp_dumb_release,
-    .ssthresh	= tcp_dumb_ssthresh,
-    .undo_cwnd	= tcp_dumb_undo_cwnd,
-    .cong_control	= tcp_dumb_cong_control,
+    .flags        = TCP_CONG_NON_RESTRICTED,
+    .init         = tcp_dumb_init,
+    .release      = tcp_dumb_release,
+    .ssthresh     = tcp_dumb_ssthresh,
+    .undo_cwnd    = tcp_dumb_undo_cwnd,
+    .cong_control = tcp_dumb_cong_control,
 
-    .owner		= THIS_MODULE,
-    .name		= "dumb",
+    .owner        = THIS_MODULE,
+    .name         = "dumb",
 };
 
 static int __init tcp_dumb_register(void)
