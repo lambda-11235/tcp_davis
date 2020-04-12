@@ -32,7 +32,7 @@ do
     then
         mkdir $DIR
     fi
-    
+
     cd $DIR
 
     for cc in dumb reno vegas bbr

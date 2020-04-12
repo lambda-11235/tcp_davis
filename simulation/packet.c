@@ -13,6 +13,8 @@ void packet_buffer_enqueue(struct packet_buffer *buf,
         buf->tail->next = packet;
         buf->tail = packet;
     }
+
+    buf->length++;
 }
 
 
@@ -23,6 +25,7 @@ struct packet* packet_buffer_dequeue(struct packet_buffer *buf)
     if (packet != NULL) {
         buf->head = packet->next;
         packet->next = NULL;
+        buf->length--;
     }
 
     if (buf->head == NULL)

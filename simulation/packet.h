@@ -8,17 +8,17 @@
 
 struct packet {
     double send_time;
-    bool lost;
     struct packet *next;
 };
 
 struct packet_buffer {
+    size_t length;
     struct packet *head;
     struct packet *tail;
 };
 
 
-#define packet_buffer_empty {NULL, NULL}
+#define packet_buffer_empty {0, NULL, NULL}
 
 
 void packet_buffer_enqueue(struct packet_buffer *buf,
