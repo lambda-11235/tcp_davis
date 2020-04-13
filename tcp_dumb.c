@@ -1,6 +1,64 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Dumb congestion control
+ *
+ *
+ * The core principal behind this algorithms operation is the equation
+ * RTT = (SND CWND)*(Min. RTT)/BDP
+ *
+ * Using this equation we first estimate
+ * Max. Rate = max{(SND CWND)/RTT}
+ * And then we estimate
+ * BDP = (Max. Rate)*(Min. RTT)
+ *
+ * This allows us to set the SND CWND = BDP, which is our optimal operating point.
+ *
+ * Under normal circumstances (i.e. no losses) TCP Dumb runs through
+ * four modes, with an additional RECOVER mode.
+ *
+ * STABLE: We keep the snd_cwnd set to our estimate of the BDP.
+ *
+ * GAIN 1: We set snd_cwnd to BDP*(1 + 1/inc_factor), and wait for the buffers to fill.
+ *
+ * GAIN 2: After the buffers have been saturated we switch to the
+ * second gain mode. This mode is like the first, except that we
+ * estimate the maximum rate in **this mode only**. This is important
+ * because this is the only mode in which we know that the pipe is
+ * saturated. This will thus be the only time the RTT truly reflects
+ * congestion.
+ *
+ * DRAIN: Now we set the snd_cwnd to BDP*(1 - 1/inc_factor) in order
+ * to estimate the minimum RTT. After this is done we set our BDP
+ * estimate to (max rate measured)*(min. RTT).
+ *
+ * RECOVER: This is a shorter version of the STABLE mode. It is
+ * entered when a loss occurs in slow start or during a GAIN cycle.
+ *
+ * The inc_factor is used to control for small buffers and the use of
+ * AQM. If a loss occurs while in a gain cycle, then we assume this
+ * loss was due to use overwhelming network buffers, and double the
+ * inc_factor. Thus, the next time enter the gain cycle we will
+ * increase the snd_cwnd by a slightly lower amount, hopefully so that
+ * the buffers are not overwhelmed. It is also important to reduce how
+ * much we decrease the snd_cwnd during the DRAIN mode. This is
+ * because when we increase the snd_cwnd when transitioning to STABLE
+ * we do not want the sudden increase in sent packets to overwhelm
+ * buffers.
+ *
+ *
+ * Losses may also occur due to sudden changes in network
+ * characteristics. Reacting to these changes is only a problem for
+ * the algorithm if the RTT drops drastically, as our changes in the
+ * snd_cwnd may not be enough to correctly measure the minimum RTT.
+ * To manage this we introduce three loss modes NO_LOSS, LOSS, and
+ * LOSS_BACKOFF. If a loss occurs while in NO_LOSS mode, then we
+ * switch to LOSS mode. While in LOSS mode, DRAIN mode will set the
+ * snd_cwnd to the minimum allowed value. This ensures that we will
+ * correctly probe the baseline RTT. However, since we are making such
+ * a large change in the snd_cwnd, we may overwhelm the buffers when
+ * transitioning to STABLE mode. Thus, we first transition to
+ * LOSS_BACKOFF mode before going back to NO_LOSS mode. This ensures
+ * that we will ignore losses caused by the large drain.
  */
 
 #include <linux/mm.h>
