@@ -35,7 +35,7 @@ do
 
     cd $DIR
 
-    for cc in dumb reno vegas bbr
+    for cc in dumb bbr reno vegas
     do
         sysctl net.ipv4.tcp_congestion_control=$cc
 
@@ -46,3 +46,5 @@ do
         esac
     done
 done
+
+sysctl net.ipv4.tcp_congestion_control=$CC_ALGO
