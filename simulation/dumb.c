@@ -9,11 +9,11 @@
 static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
-static const unsigned long REC_RTTS = 2;
-static const unsigned long DRAIN_RTTS = 2;
+static const unsigned long REC_RTTS = 1;
+static const unsigned long DRAIN_RTTS = 1;
 static const unsigned long STABLE_RTTS = 32;
 static const unsigned long GAIN_1_RTTS = 2;
-static const unsigned long GAIN_2_RTTS = 2;
+static const unsigned long GAIN_2_RTTS = 1;
 
 static const unsigned long MIN_INC_FACTOR = 2;
 static const unsigned long MAX_INC_FACTOR = 128;
@@ -39,17 +39,6 @@ static inline unsigned long gain_cwnd(struct dumb *d)
 }
 
 
-static inline unsigned long drain_cwnd(struct dumb *d)
-{
-    if (d->loss_mode == DUMB_LOSS) {
-        return MIN_CWND;
-    } else {
-        unsigned long cwnd = (d->inc_factor - 1)*d->bdp/d->inc_factor;
-        return max(MIN_CWND, cwnd);
-    }
-}
-
-
 
 
 ////////// Enter Routines START //////////
@@ -68,16 +57,13 @@ static void enter_stable(struct dumb *d, double time)
     d->mode = DUMB_STABLE;
     d->trans_time = time;
 
-    if (d->loss_mode == DUMB_LOSS)
-        d->loss_mode = DUMB_LOSS_BACKOFF;
-    else if (d->loss_mode == DUMB_LOSS_BACKOFF)
-        d->loss_mode = DUMB_NO_LOSS;
-
-    d->bdp = d->max_rate*d->min_rtt;
+    d->bdp = d->max_rate*d->min_rtt/d->mss;
     d->bdp = max(MIN_CWND, d->bdp);
 
     d->cwnd = d->bdp;
     d->ssthresh = d->bdp;
+
+    d->pacing_rate = d->max_rate;
 
     d->inc_factor--;
     d->inc_factor = max(d->inc_factor, MIN_INC_FACTOR);
@@ -90,6 +76,7 @@ static void enter_gain_1(struct dumb *d, double time)
     d->trans_time = time;
 
     d->cwnd = gain_cwnd(d);
+    d->pacing_rate *= 2;
 }
 
 
@@ -110,10 +97,7 @@ static void enter_drain(struct dumb *d, double time)
     d->mode = DUMB_DRAIN;
     d->trans_time = time;
 
-    d->bdp = d->max_rate*d->min_rtt;
-    d->bdp = max(MIN_CWND, d->bdp);
-
-    d->cwnd = drain_cwnd(d);
+    d->cwnd = MIN_CWND;
     d->ssthresh = d->cwnd;
 }
 ////////// Enter Routines END //////////
@@ -121,17 +105,20 @@ static void enter_drain(struct dumb *d, double time)
 
 
 
-void dumb_init(struct dumb *d, double time)
+void dumb_init(struct dumb *d, double time,
+               unsigned long mss)
 {
     d->mode = DUMB_RECOVER;
     d->trans_time = time;
 
+    d->mss = mss;
     d->bdp = MIN_CWND;
     d->cwnd = MIN_CWND;
     d->ssthresh = MAX_CWND;
 
     d->inc_factor = MIN_INC_FACTOR;
 
+    d->pacing_rate = 0;
     d->max_rate = 0;
 
     d->last_rtt = 1;
@@ -145,7 +132,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 {
     if (rtt > 0) {
         if (d->mode == DUMB_GAIN_2 || in_slow_start(d))
-            d->max_rate = max(d->max_rate, inflight/rtt);
+            d->max_rate = max(d->max_rate, inflight*d->mss/rtt);
 
         d->last_rtt = rtt;
         d->min_rtt = min(d->min_rtt, rtt);
@@ -155,7 +142,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 
     if (in_slow_start(d)) {
         if (time > d->trans_time + d->last_rtt) {
-            unsigned long new_bdp = max(MIN_CWND, d->max_rate*d->min_rtt);
+            unsigned long new_bdp = max(MIN_CWND, d->max_rate*d->min_rtt/d->mss);
             d->trans_time = time;
 
             if (d->max_rtt > 3*d->min_rtt/2) {
@@ -183,10 +170,6 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
     } else if (d->mode == DUMB_DRAIN) {
         if (time > d->trans_time + DRAIN_RTTS*d->last_rtt) {
             enter_stable(d, time);
-        } else {
-            d->bdp = clamp(d->max_rate*d->min_rtt, MIN_CWND, d->bdp);
-            d->cwnd = drain_cwnd(d);
-            d->ssthresh = d->cwnd;
         }
     } else {
         fprintf(stderr, "Got to undefined mode %d at time %f\n", d->mode, time);
@@ -209,7 +192,4 @@ void dumb_on_loss(struct dumb *d, double time)
         d->bdp = max(MIN_CWND, d->bdp/2);
         enter_recovery(d, time);
     }
-
-    if (d->loss_mode == DUMB_NO_LOSS)
-        d->loss_mode = DUMB_LOSS;
 }

@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     double last_loss_time = 0;
     double rtt = 0;
 
-    dumb_init(&d, time);
+    dumb_init(&d, time, MSS);
 
     while (time < RUNTIME) {
         enum event_type event = NONE;
@@ -95,6 +95,12 @@ int main(int argc, char *argv[])
         }
 
 
+        double send_rate = app_rate(time);
+
+        if (d.pacing_rate > 0 && d.pacing_rate < send_rate)
+            send_rate = d.pacing_rate;
+
+
         if (event == ARRIVAL) {
             if (bn_packet == NULL)
                 next_bottleneck_time = time + MSS/max_bw(time);
@@ -107,7 +113,7 @@ int main(int argc, char *argv[])
                 packet_buffer_enqueue(&bottleneck, net_packet);
         } else if (event == DEPARTURE) {
             if (inflight >= d.cwnd)
-                next_send_time = time + MSS/app_rate(time);
+                next_send_time = time + MSS/send_rate;
 
             bn_packet = packet_buffer_dequeue(&bottleneck);
             inflight--;
@@ -127,7 +133,7 @@ int main(int argc, char *argv[])
             rate_sent += MSS;
             inflight++;
 
-            next_send_time = time + MSS/app_rate(time);
+            next_send_time = time + MSS/send_rate;
         }
 
 
@@ -150,7 +156,7 @@ int main(int argc, char *argv[])
 
             printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
                    losses);
-            printf("%f,%f,%lu,%u\n", d.max_rate*MSS, d.min_rtt, d.bdp, d.mode);
+            printf("%f,%f,%lu,%u\n", d.max_rate, d.min_rtt, d.bdp, d.mode);
         }
     }
 
