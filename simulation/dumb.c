@@ -17,6 +17,7 @@ static const unsigned long GAIN_2_RTTS = 1;
 
 static const unsigned long MIN_INC_FACTOR = 2;
 static const unsigned long MAX_INC_FACTOR = 128;
+static const unsigned long SS_INC_FACTOR = 2;
 
 static const double RTT_INF = 10;
 
@@ -35,6 +36,13 @@ static inline bool in_slow_start(struct dumb *d)
 static inline unsigned long gain_cwnd(struct dumb *d)
 {
     unsigned long cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
+    return max(d->bdp + MIN_CWND, cwnd);
+}
+
+
+static inline unsigned long ss_cwnd(struct dumb *d)
+{
+    unsigned long cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
     return max(d->bdp + MIN_CWND, cwnd);
 }
 
@@ -127,11 +135,50 @@ void dumb_init(struct dumb *d, double time,
 }
 
 
+static void dumb_slow_start(struct dumb *d, double time, double rtt)
+{
+    if (d->mode == DUMB_GAIN_1) {
+        if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
+            d->mode = DUMB_GAIN_2;
+            d->trans_time = time;
+
+            d->max_rate = 0;
+        }
+    } else if (d->mode == DUMB_GAIN_2) {
+        if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
+            unsigned long new_bdp = max(MIN_CWND, d->max_rate*d->min_rtt/d->mss);
+
+            if (new_bdp > d->bdp) {
+                d->mode = DUMB_GAIN_1;
+                d->trans_time = time;
+
+                d->bdp = new_bdp;
+                d->cwnd = ss_cwnd(d);
+                d->pacing_rate = 2*d->max_rate;
+            } else {
+                d->bdp = new_bdp;
+                enter_recovery(d, time);
+            }
+        }
+    } else {
+        d->mode = DUMB_GAIN_1;
+        d->trans_time = time;
+
+        d->max_rate = 0;
+        d->min_rtt = RTT_INF;
+        d->max_rtt = 0;
+
+        d->cwnd = ss_cwnd(d);
+        d->pacing_rate = 2*d->max_rate;
+    }
+}
+
+
 void dumb_on_ack(struct dumb *d, double time, double rtt,
                  unsigned long inflight)
 {
     if (rtt > 0) {
-        if (d->mode == DUMB_GAIN_2 || in_slow_start(d))
+        if (d->mode == DUMB_GAIN_2)
             d->max_rate = max(d->max_rate, inflight*d->mss/rtt);
 
         d->last_rtt = rtt;
@@ -141,18 +188,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 
 
     if (in_slow_start(d)) {
-        if (time > d->trans_time + d->last_rtt) {
-            unsigned long new_bdp = max(MIN_CWND, d->max_rate*d->min_rtt/d->mss);
-            d->trans_time = time;
-
-            if (d->max_rtt > 3*d->min_rtt/2) {
-                d->bdp = max(MIN_CWND, d->bdp/2);
-                enter_recovery(d, time);
-            } else {
-                d->bdp = new_bdp;
-                d->cwnd = gain_cwnd(d);
-            }
-        }
+        dumb_slow_start(d, time, rtt);
     } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
         unsigned long rtts = d->mode == DUMB_RECOVER ? REC_RTTS : STABLE_RTTS;
 
@@ -182,14 +218,14 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 
 void dumb_on_loss(struct dumb *d, double time)
 {
-    if ((d->mode == DUMB_GAIN_1 || d->mode == DUMB_GAIN_2)
-        && d->inc_factor < MAX_INC_FACTOR) {
+    bool react = d->mode == DUMB_GAIN_1 || d->mode == DUMB_GAIN_2;
+    react = react && d->inc_factor < MAX_INC_FACTOR;
+    react = react || in_slow_start(d);
+
+    if (react) {
         d->inc_factor *= 2;
         d->inc_factor = min(d->inc_factor, MAX_INC_FACTOR);
 
-        enter_recovery(d, time);
-    } else if (in_slow_start(d)) {
-        d->bdp = max(MIN_CWND, d->bdp/2);
         enter_recovery(d, time);
     }
 }
