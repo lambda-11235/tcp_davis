@@ -58,15 +58,31 @@
 static const u32 MIN_CWND = 4;
 
 static const u32 REC_RTTS = 1;
-static const u32 DRAIN_RTTS = 1;
-static const u32 STABLE_RTTS = 32;
+static u32 STABLE_RTTS = 32;
 static const u32 GAIN_1_RTTS = 2;
 static const u32 GAIN_2_RTTS = 1;
+static const u32 DRAIN_RTTS = 1;
 
-static const unsigned long MIN_INC_FACTOR = 2;
-static const unsigned long MAX_INC_FACTOR = 128;
+static u32 MIN_INC_FACTOR = 2;
+static u32 MAX_INC_FACTOR = 128;
 
 static const u32 RTT_INF = U32_MAX;
+
+
+// TODO: These parameters should be non-zero. Not sure if it's worth
+// writing a custom parameter op for this.
+
+// These are the parameters that really affect performance, and
+// therefore should be tuneable. Making the other parameters
+// configurable would mainly just be confusing and possibly result in
+// bad behavior.
+module_param(STABLE_RTTS, uint, 0644);
+MODULE_PARM_DESC(STABLE_RTTS, "Number of RTTs to stay in STABLE mode for");
+
+module_param(MIN_INC_FACTOR, uint, 0644);
+MODULE_PARM_DESC(MIN_INC_FACTOR, "Maximum snd_cwnd gain = BDP/MIN_INC_FACTOR");
+module_param(MAX_INC_FACTOR, uint, 0644);
+MODULE_PARM_DESC(MAX_INC_FACTOR, "Minimum snd_cwnd gain = BDP/MIN_INC_FACTOR");
 
 
 enum dumb_mode { DUMB_RECOVER, DUMB_STABLE,
