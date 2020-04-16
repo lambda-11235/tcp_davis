@@ -50,6 +50,21 @@ static inline unsigned long ss_cwnd(struct dumb *d)
 
 
 ////////// Enter Routines START //////////
+static void enter_slow_start(struct dumb *d, double time)
+{
+    d->mode = DUMB_GAIN_1;
+    d->trans_time = time;
+
+    d->max_rate = 0;
+    d->min_rtt = RTT_INF;
+    d->max_rtt = 0;
+
+    d->bdp = MIN_CWND;
+    d->cwnd = MIN_CWND;
+    d->pacing_rate = 0;
+}
+
+
 static void enter_recovery(struct dumb *d, double time)
 {
     d->mode = DUMB_RECOVER;
@@ -161,15 +176,7 @@ static void dumb_slow_start(struct dumb *d, double time, double rtt)
             }
         }
     } else {
-        d->mode = DUMB_GAIN_1;
-        d->trans_time = time;
-
-        d->max_rate = 0;
-        d->min_rtt = RTT_INF;
-        d->max_rtt = 0;
-
-        d->cwnd = ss_cwnd(d);
-        d->pacing_rate = 2*d->max_rate;
+        enter_slow_start(d, time);
     }
 }
 

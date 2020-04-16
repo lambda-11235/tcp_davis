@@ -140,6 +140,23 @@ static inline u64 dumb_current_time(struct sock *sk)
 
 
 ////////// Enter Routines START //////////
+static void dumb_enter_slow_start(struct sock *sk, u64 now)
+{
+    struct dumb *dumb = inet_csk_ca(sk);
+    struct tcp_sock *tp = tcp_sk(sk);
+
+    dumb->mode = DUMB_GAIN_1;
+    dumb->trans_time = now;
+
+    dumb->max_rate = 0;
+    dumb->min_rtt = RTT_INF;
+    dumb->max_rtt = 0;
+
+    dumb->bdp = MIN_CWND;
+    tp->snd_cwnd = ss_cwnd(dumb);
+    sk->sk_pacing_rate = 0;
+}
+
 static void dumb_enter_recovery(struct sock *sk, u64 now)
 {
     struct dumb *dumb = inet_csk_ca(sk);
@@ -263,6 +280,15 @@ u32 tcp_dumb_ssthresh(struct sock *sk)
 EXPORT_SYMBOL_GPL(tcp_dumb_ssthresh);
 
 
+void tcp_dumb_cwnd_event(struct sock *sk, enum tcp_ca_event ev)
+{
+    u64 now = dumb_current_time(sk);
+
+    if (ev == CA_EVENT_CWND_RESTART)
+        dumb_enter_slow_start(sk, now);
+}
+
+
 u32 tcp_dumb_undo_cwnd(struct sock *sk)
 {
     // TODO: Does this get called on ECN CE event?
@@ -315,15 +341,7 @@ static void dumb_slow_start(struct sock *sk, u64 now)
             }
         }
     } else {
-        dumb->mode = DUMB_GAIN_1;
-        dumb->trans_time = now;
-
-        dumb->max_rate = 0;
-        dumb->min_rtt = RTT_INF;
-        dumb->max_rtt = 0;
-
-        tp->snd_cwnd = ss_cwnd(dumb);
-        sk->sk_pacing_rate = 2*dumb->max_rate;
+        dumb_enter_slow_start(sk, now);
     }
 }
 
