@@ -130,9 +130,10 @@ static inline u64 rate_adj(struct sock *sk)
 }
 
 
-static inline u64 dumb_current_time(void)
+static inline u64 dumb_current_time(struct sock *sk)
 {
-    return ktime_get_ns()/NSEC_PER_USEC;
+    struct tcp_sock *tp = tcp_sk(sk);
+    return div_u64(tp->tcp_clock_cache, NSEC_PER_USEC);
 }
 
 
@@ -230,7 +231,7 @@ void tcp_dumb_init(struct sock *sk)
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 
     dumb->mode = DUMB_RECOVER;
-    dumb->trans_time = dumb_current_time();
+    dumb->trans_time = dumb_current_time(sk);
 
     dumb->bdp = MIN_CWND;
 
@@ -267,7 +268,7 @@ u32 tcp_dumb_undo_cwnd(struct sock *sk)
     // TODO: Does this get called on ECN CE event?
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
-    u64 now = dumb_current_time();
+    u64 now = dumb_current_time(sk);
     bool react = dumb->mode == DUMB_GAIN_1 || dumb->mode == DUMB_GAIN_2;
     react = react && dumb->inc_factor < MAX_INC_FACTOR;
     react = react || tcp_in_slow_start(tp);
@@ -331,7 +332,7 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
     struct dumb *dumb = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
-    u64 now = dumb_current_time();
+    u64 now = dumb_current_time(sk);
 
     if (rs->rtt_us > 0) {
         if (dumb->mode == DUMB_GAIN_2) {
