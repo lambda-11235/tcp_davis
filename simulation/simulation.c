@@ -54,8 +54,6 @@ int main(int argc, char *argv[])
     double next_send_time = time;
 
     unsigned long inflight = 0;
-    bool is_cwnd_limited = true;
-
     double rate_sent = 0;
     unsigned long losses = 0;
     double last_loss_time = 0;
