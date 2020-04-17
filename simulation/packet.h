@@ -7,6 +7,7 @@
 
 
 struct packet {
+    size_t flow_id;
     double send_time;
     struct packet *next;
 };

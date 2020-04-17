@@ -11,6 +11,7 @@
 #define MBPS 131072
 #define GBPS 134217728
 
+#define NUM_FLOWS 1
 const unsigned long MSS = 512;
 
 const double LOSS_PROB = 0.0;//2.5e-7;
@@ -19,7 +20,9 @@ const int LOSS_RAND_CUTOFF = LOSS_PROB*RAND_MAX;
 inline double min_rtt(double t) { return 30e-3; }
 inline double max_bw(double t) { return 10.0*GBPS; }
 
-inline double app_rate(double t) { return 2*max_bw(t); }
+inline double app_rate(double t, size_t flow) {
+    return 2*max_bw(t);
+}
 
 inline unsigned long bdp(double t) { return max_bw(t)*min_rtt(t)/MSS; }
 inline unsigned long buf_size(double t) { return bdp(t); }
@@ -33,14 +36,14 @@ enum event_type { NONE, SEND, ARRIVAL, DEPARTURE };
 
 int main(int argc, char *argv[])
 {
-    struct dumb d;
+    struct dumb d[NUM_FLOWS];
 
     srand(time(NULL));
 
     if ((int) (RAND_MAX*LOSS_PROB) == 0 && LOSS_PROB != 0.0)
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
-    printf("time,rtt,cwnd,rate,losses,");
+    printf("flow_id,time,rtt,cwnd,rate,losses,");
     printf("max_rate,min_rtt,bdp,mode\n");
 
     unsigned int last_perc = 0;
@@ -51,18 +54,20 @@ int main(int argc, char *argv[])
     struct packet_buffer bottleneck = packet_buffer_empty;
     struct packet_buffer lost = packet_buffer_empty;
     double next_bottleneck_time = time;
-    double next_send_time = time;
+    double next_send_time[NUM_FLOWS] = {time};
 
-    unsigned long inflight = 0;
-    double rate_sent = 0;
-    unsigned long losses = 0;
-    double last_loss_time = 0;
-    double rtt = 0;
+    unsigned long inflight[NUM_FLOWS] = {0};
+    double rate_sent[NUM_FLOWS] = {0};
+    unsigned long losses[NUM_FLOWS] = {0};
+    double last_loss_time[NUM_FLOWS] = {0};
+    double rtt[NUM_FLOWS] = {0};
 
-    dumb_init(&d, time, MSS);
+    for (size_t i = 0; i < NUM_FLOWS; i++)
+        dumb_init(&d[i], time, MSS);
 
     while (time < RUNTIME) {
         enum event_type event = NONE;
+        size_t flow = 0;
         struct packet *net_packet = packet_buffer_peek(&network);
         struct packet *bn_packet = packet_buffer_peek(&bottleneck);
 
@@ -71,18 +76,22 @@ int main(int argc, char *argv[])
 
         if (net_packet != NULL) {
             event = ARRIVAL;
-
+            flow = net_packet->flow_id;
             time = net_packet->send_time + min_rtt(net_packet->send_time);
         }
 
         if (bn_packet != NULL && next_bottleneck_time < time) {
             event = DEPARTURE;
+            flow = bn_packet->flow_id;
             time = next_bottleneck_time;
         }
 
-        if (inflight < d.cwnd && next_send_time < time) {
-            event = SEND;
-            time = next_send_time;
+        for (size_t i = 0; i < NUM_FLOWS; i++) {
+            if (inflight[i] < d[i].cwnd && next_send_time[i] < time) {
+                event = SEND;
+                flow = i;
+                time = next_send_time[i];
+            }
         }
 
         /*** Progress update ***/
@@ -93,10 +102,14 @@ int main(int argc, char *argv[])
         }
 
 
-        double send_rate = app_rate(time);
+        double send_rate[NUM_FLOWS];
 
-        if (d.pacing_rate > 0 && d.pacing_rate < send_rate)
-            send_rate = d.pacing_rate;
+        for (size_t i = 0; i < NUM_FLOWS; i++) {
+            send_rate[i] = app_rate(time, i);
+
+            if (d[i].pacing_rate > 0 && d[i].pacing_rate < send_rate[i])
+                send_rate[i] = d[i].pacing_rate;
+        }
 
 
         if (event == ARRIVAL) {
@@ -110,36 +123,38 @@ int main(int argc, char *argv[])
             else
                 packet_buffer_enqueue(&bottleneck, net_packet);
         } else if (event == DEPARTURE) {
-            if (inflight >= d.cwnd)
-                next_send_time = time + MSS/send_rate;
+            if (inflight[flow] >= d[flow].cwnd)
+                next_send_time[flow] = time + MSS/send_rate[flow];
 
             bn_packet = packet_buffer_dequeue(&bottleneck);
-            inflight--;
+            inflight[flow]--;
 
-            rtt = time - bn_packet->send_time;
-            dumb_on_ack(&d, time, rtt, inflight);
+            rtt[flow] = time - bn_packet->send_time;
+            dumb_on_ack(&d[flow], time, rtt[flow], inflight[flow]);
 
             next_bottleneck_time = time + MSS/max_bw(time);
             free(bn_packet);
         } else if (event == SEND) {
             struct packet *p = malloc(sizeof(struct packet));
+            p->flow_id = flow;
             p->send_time = time;
             p->next = NULL;
 
             packet_buffer_enqueue(&network, p);
 
-            rate_sent += MSS;
-            inflight++;
+            rate_sent[flow] += MSS;
+            inflight[flow]++;
 
-            next_send_time = time + MSS/send_rate;
+            next_send_time[flow] = time + MSS/send_rate[flow];
         }
 
 
         struct packet *lost_packet = packet_buffer_dequeue(&lost);
         while (lost_packet != NULL) {
-            inflight--;
-            losses++;
-            dumb_on_loss(&d, time);
+            size_t flow = lost_packet->flow_id;
+            inflight[flow]--;
+            losses[flow]++;
+            dumb_on_loss(&d[flow], time);
 
             free(lost_packet);
             lost_packet = packet_buffer_dequeue(&lost);
@@ -148,13 +163,17 @@ int main(int argc, char *argv[])
 
         /*** Log data ***/
         if (time > last_print_time + report_interval(time)) {
-            double rate = rate_sent/(time - last_print_time);
-            rate_sent = 0;
-            last_print_time = time;
+            for (size_t i = 0; i < NUM_FLOWS; i++) {
+                double rate = rate_sent[i]/(time - last_print_time);
+                rate_sent[i] = 0;
 
-            printf("%f,%f,%lu,%f,%lu,", time, rtt, d.cwnd, rate,
-                   losses);
-            printf("%f,%f,%lu,%u\n", d.max_rate, d.min_rtt, d.bdp, d.mode);
+                printf("%ld,%f,%f,%lu,%f,%lu,", i, time, rtt[i],
+                       d[i].cwnd, rate, losses[i]);
+                printf("%f,%f,%lu,%u\n", d[i].max_rate, d[i].min_rtt,
+                       d[i].bdp, d[i].mode);
+            }
+
+            last_print_time = time;
         }
     }
 

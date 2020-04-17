@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description="Plot")
 parser.add_argument('data_file', type=str,
         help="The data file to plot from.")
+parser.add_argument('--flow', type=int, default=0,
+        help="")
 parser.add_argument('--cwnd-limit', type=float, nargs=2,
         help="")
 parser.add_argument('--rate-limit', type=float, nargs=2,
@@ -23,6 +25,7 @@ mpl.rc('figure', dpi=200)
 
 
 data = pd.read_csv(args.data_file)
+data = data.loc[data.flow_id == args.flow]
 time = data.time
 
 
