@@ -60,7 +60,7 @@ static void enter_slow_start(struct dumb *d, double time)
     d->max_rtt = 0;
 
     d->bdp = MIN_CWND;
-    d->cwnd = MIN_CWND;
+    d->cwnd = ss_cwnd(d);
     d->pacing_rate = 0;
 }
 
