@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("flow_id,time,rtt,cwnd,rate,losses,");
-    printf("max_rate,min_rtt,bdp,mode\n");
+    printf("pacing_rate,min_rtt,bdp,mode\n");
 
     unsigned int last_perc = 0;
     double last_print_time = 0;
@@ -99,6 +99,9 @@ int main(int argc, char *argv[])
                 event = SEND;
                 flow = i;
                 time = next_send_time[i];
+
+                if (time < flow_start_time(i))
+                    time = flow_start_time(i);
             }
         }
 
@@ -177,7 +180,7 @@ int main(int argc, char *argv[])
 
                 printf("%ld,%f,%f,%lu,%f,%lu,", i, time, rtt[i],
                        d[i].cwnd, rate, losses[i]);
-                printf("%f,%f,%lu,%u\n", d[i].max_rate, d[i].min_rtt,
+                printf("%f,%f,%lu,%u\n", d->pacing_rate, d[i].min_rtt,
                        d[i].bdp, d[i].mode);
             }
 

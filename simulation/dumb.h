@@ -5,26 +5,26 @@
 #define _DUMB_H_
 
 
-enum dumb_mode { DUMB_RECOVER, DUMB_STABLE,
-                 DUMB_GAIN_1, DUMB_GAIN_2,
-                 DUMB_DRAIN };
+enum dumb_mode { DUMB_RECOVER, DUMB_STABLE, DUMB_DRAIN,
+                 DUMB_GAIN_1, DUMB_GAIN_2 };
 
 struct dumb {
     enum dumb_mode mode;
     double trans_time;
 
     unsigned long mss;
-    unsigned long bdp;
     unsigned long cwnd;
     unsigned long ssthresh;
+
+    unsigned long bdp;
+    unsigned long ss_last_bdp;
 
     unsigned long inc_factor;
 
     double pacing_rate;
-    double max_rate;
 
     double last_rtt;
-    double min_rtt, max_rtt;
+    double min_rtt;
 };
 
 

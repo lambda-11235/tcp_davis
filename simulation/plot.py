@@ -62,7 +62,7 @@ ax.legend()
 
 ### Rate ###
 rate = data.rate/2**17
-maxRate = data.max_rate/2**17
+pacingRate = data.pacing_rate/2**17
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
@@ -71,7 +71,7 @@ if args.rate_limit is not None:
     ax.set_ylim(args.rate_limit[0], args.rate_limit[1])
 
 ax.plot(time, rate, label="Rate", color="blue")
-ax.plot(time, maxRate, '--', label="Max Rate", color="red")
+ax.plot(time, pacingRate, '--', label="Pacing Rate", color="red")
 
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Rate (Mbps)")

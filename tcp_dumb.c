@@ -3,41 +3,30 @@
  * Dumb congestion control
  *
  *
- * The core principal behind this algorithms operation is the equation
- * RTT = (Inflight Bytes)*(Min. RTT)/BDP
+ * The core principal behind this algorithm's operation are the
+ * equations
  *
- * Using this equation we first estimate
- * Rate = (Inflight Bytes)/RTT
- * And then we estimate
- * BDP = (Max. Rate)*(Min. RTT)
+ * RTT = max(1, (Inflight Bytes)/BDP)*(Min. RTT)
+ * Throughput = (Inflight Bytes)/RTT
  *
- * This allows us to set the snd_cwnd = BDP, which is our optimal operating point.
+ * Using the first equation we first estimate
+ * BDP = (Inflight Bytes)*(Min. RTT)/RTT
+ *
+ * This allows us to set the snd_cwnd = BDP and
+ * sk_pacing_rate = BDP/RTT, which is our optimal operating point.
  *
  * Under normal circumstances (i.e. no losses) TCP Dumb runs through
  * four modes, with an additional RECOVER mode.
  *
- * STABLE: We keep the snd_cwnd set to our estimate of the BDP.  We
- * also set our sk_pacing_rate = Max. Rate, so that buffers will not
- * be overwhelmed by a flood of packets, which could otherwise result
- * in losses.
+ * STABLE: TODO
  *
- * GAIN 1: We set snd_cwnd to BDP*(1 + 1/inc_factor), and wait for the
- * buffers to fill. We also double the pacing rate to allow the
- * snd_cwnd to grow.
+ * DRAIN: TODO
  *
- * GAIN 2: After the buffers have been saturated we switch to the
- * second gain mode. This mode is like the first, except that we
- * estimate the maximum rate in **this mode only**. This is important
- * because this is the only mode in which we know that the pipe is
- * saturated. This will thus be the only time the RTT truly reflects
- * congestion.
+ * GAIN 1: TODO
  *
- * DRAIN: Now we set the snd_cwnd to its minimum value in order
- * to estimate the minimum RTT. After this is done we set our BDP
- * estimate to (max rate measured)*(min. RTT).
+ * GAIN 2: TODO
  *
- * RECOVER: This is a shorter version of the STABLE mode. It is
- * entered when a loss occurs in slow start or during a GAIN cycle.
+ * RECOVER: TODO
  *
  * The inc_factor is used to control for small buffers and the use of
  * AQM. If a loss occurs while in a gain cycle, then we assume this
@@ -59,9 +48,9 @@ static const u32 MIN_CWND = 4;
 
 static const u32 REC_RTTS = 1;
 static u32 STABLE_RTTS = 32;
-static const u32 GAIN_1_RTTS = 2;
-static const u32 GAIN_2_RTTS = 1;
 static const u32 DRAIN_RTTS = 1;
+static const u32 GAIN_1_RTTS = 2;
+static const u32 GAIN_2_RTTS = 2;
 
 static u32 MIN_INC_FACTOR = 2;
 static u32 MAX_INC_FACTOR = 128;
@@ -88,24 +77,20 @@ module_param(SS_INC_FACTOR, uint, 0644);
 MODULE_PARM_DESC(SS_INC_FACTOR, "Slow-start snd_cwnd gain = BDP/SS_INC_FACTOR");
 
 
-enum dumb_mode { DUMB_RECOVER, DUMB_STABLE,
-                 DUMB_GAIN_1, DUMB_GAIN_2,
-                 DUMB_DRAIN };
+enum dumb_mode { DUMB_RECOVER, DUMB_STABLE, DUMB_DRAIN,
+                 DUMB_GAIN_1, DUMB_GAIN_2 };
 
 struct dumb {
     enum dumb_mode mode;
     u64 trans_time;
 
-    // Rates are in bytes/second
-    u64 pacing_rate;
-    u64 max_rate;
-
     u32 inc_factor;
 
-    u32 last_rtt;
-    u32 min_rtt, max_rtt;
-
     u32 bdp;
+    u32 ss_last_bdp;
+
+    u32 last_rtt;
+    u32 min_rtt;
 };
 
 
@@ -148,13 +133,12 @@ static void dumb_enter_slow_start(struct sock *sk, u64 now)
     dumb->mode = DUMB_GAIN_1;
     dumb->trans_time = now;
 
-    dumb->max_rate = 0;
-    dumb->min_rtt = RTT_INF;
-    dumb->max_rtt = 0;
-
     dumb->bdp = MIN_CWND;
-    tp->snd_cwnd = ss_cwnd(dumb);
-    sk->sk_pacing_rate = 0;
+    dumb->ss_last_bdp = 0;
+    
+    tp->snd_cwnd = MIN_CWND;
+
+    dumb->min_rtt = RTT_INF;
 }
 
 static void dumb_enter_recovery(struct sock *sk, u64 now)
@@ -178,48 +162,17 @@ static void dumb_enter_stable(struct sock *sk, u64 now)
     dumb->mode = DUMB_STABLE;
     dumb->trans_time = now;
 
-    dumb->bdp = dumb->max_rate*dumb->min_rtt/rate_adj(sk);
-    dumb->bdp = max_t(u32, MIN_CWND, dumb->bdp);
-
     tp->snd_cwnd = dumb->bdp;
-    tp->snd_ssthresh = dumb->bdp;
-
-    sk->sk_pacing_rate = dumb->max_rate;
+    tp->snd_ssthresh = tp->snd_cwnd;
 
     dumb->inc_factor--;
     dumb->inc_factor = max_t(u32, dumb->inc_factor, MIN_INC_FACTOR);
 
+    dumb->min_rtt = dumb->last_rtt;
+
     //printk(KERN_DEBUG "tcp_dumb: max_rate = %llu, "
     //       "min_rtt = %u, bdp = %u, gain_cwnd = %u\n",
     //       dumb->max_rate, dumb->min_rtt, dumb->bdp, tp->snd_cwnd);
-}
-
-
-static void dumb_enter_gain_1(struct sock *sk, u64 now)
-{
-    struct dumb *dumb = inet_csk_ca(sk);
-    struct tcp_sock *tp = tcp_sk(sk);
-
-    dumb->mode = DUMB_GAIN_1;
-    dumb->trans_time = now;
-
-    tp->snd_cwnd = gain_cwnd(dumb);
-    sk->sk_pacing_rate *= 2;
-}
-
-
-static void dumb_enter_gain_2(struct sock *sk, u64 now)
-{
-    struct dumb *dumb = inet_csk_ca(sk);
-    struct tcp_sock *tp = tcp_sk(sk);
-
-    dumb->mode = DUMB_GAIN_2;
-    dumb->trans_time = now;
-
-    dumb->max_rate = 0;
-
-    dumb->min_rtt = RTT_INF;
-    dumb->max_rtt = 0;
 }
 
 
@@ -234,6 +187,30 @@ static void dumb_enter_drain(struct sock *sk, u64 now)
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = tp->snd_cwnd;
 }
+
+
+static void dumb_enter_gain_1(struct sock *sk, u64 now)
+{
+    struct dumb *dumb = inet_csk_ca(sk);
+    struct tcp_sock *tp = tcp_sk(sk);
+
+    dumb->mode = DUMB_GAIN_1;
+    dumb->trans_time = now;
+
+    tp->snd_cwnd = gain_cwnd(dumb);
+}
+
+
+static void dumb_enter_gain_2(struct sock *sk, u64 now)
+{
+    struct dumb *dumb = inet_csk_ca(sk);
+    struct tcp_sock *tp = tcp_sk(sk);
+
+    dumb->mode = DUMB_GAIN_2;
+    dumb->trans_time = now;
+
+    dumb->bdp = 0;
+}
 ////////// Enter Routines END //////////
 
 
@@ -244,22 +221,21 @@ void tcp_dumb_init(struct sock *sk)
     struct tcp_sock *tp = tcp_sk(sk);
     struct dumb *dumb = inet_csk_ca(sk);
 
-    tp->snd_cwnd = MIN_CWND;
-    tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
-
     dumb->mode = DUMB_RECOVER;
     dumb->trans_time = dumb_current_time(sk);
 
+    tp->snd_cwnd = MIN_CWND;
+    tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
+
     dumb->bdp = MIN_CWND;
+    dumb->ss_last_bdp = 0;
 
     dumb->inc_factor = MIN_INC_FACTOR;
 
     sk->sk_pacing_rate = 0;
-    dumb->max_rate = 0;
 
     dumb->last_rtt = 1;
     dumb->min_rtt = RTT_INF;
-    dumb->max_rtt = 0;
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_init);
 
@@ -320,23 +296,17 @@ static void dumb_slow_start(struct sock *sk, u64 now)
         if (now > dumb->trans_time + GAIN_1_RTTS*dumb->last_rtt) {
             dumb->mode = DUMB_GAIN_2;
             dumb->trans_time = now;
-
-            dumb->max_rate = 0;
         }
     } else if (dumb->mode == DUMB_GAIN_2) {
         if (now > dumb->trans_time + GAIN_2_RTTS*dumb->last_rtt) {
-            u32 new_bdp = dumb->max_rate*dumb->min_rtt/rate_adj(sk);
-            new_bdp = max_t(u32, MIN_CWND, dumb->bdp);
-
-            if (new_bdp > dumb->bdp) {
+            if (dumb->bdp > dumb->ss_last_bdp) {
                 dumb->mode = DUMB_GAIN_1;
                 dumb->trans_time = now;
 
-                dumb->bdp = new_bdp;
                 tp->snd_cwnd = ss_cwnd(dumb);
-                sk->sk_pacing_rate = 2*dumb->max_rate;
+
+                dumb->ss_last_bdp = dumb->bdp;
             } else {
-                dumb->bdp = new_bdp;
                 dumb_enter_recovery(sk, now);
             }
         }
@@ -354,13 +324,22 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     if (rs->rtt_us > 0) {
         if (dumb->mode == DUMB_GAIN_2) {
-            u64 rate = rs->prior_in_flight*rate_adj(sk)/rs->rtt_us;
-            dumb->max_rate = max_t(u64, dumb->max_rate, rate);
+            // Here we are essentially assigning the BDP are median
+            // estimate. This is because we only enter a steady-state
+            // estimation when we get an equal amount of over and
+            // under estimates.
+            u32 est_bdp = rs->prior_in_flight*dumb->min_rtt/rs->rtt_us;
+
+            if (dumb->bdp == 0)
+                dumb->bdp = est_bdp;
+            else if (dumb->bdp < est_bdp)
+                dumb->bdp++;
+            else
+                dumb->bdp--;
         }
 
         dumb->last_rtt = rs->rtt_us;
         dumb->min_rtt = min_t(u32, dumb->min_rtt, rs->rtt_us);
-        dumb->max_rtt = max_t(u32, dumb->max_rtt, rs->rtt_us);
     }
 
 
@@ -370,6 +349,10 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         unsigned long rtts = dumb->mode == DUMB_RECOVER ? REC_RTTS : STABLE_RTTS;
 
         if (now > dumb->trans_time + rtts*dumb->last_rtt) {
+            dumb_enter_drain(sk, now);
+        }
+    } else if (dumb->mode == DUMB_DRAIN) {
+        if (now > dumb->trans_time + DRAIN_RTTS*dumb->last_rtt) {
             dumb_enter_gain_1(sk, now);
         }
     } else if (dumb->mode == DUMB_GAIN_1) {
@@ -378,10 +361,6 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
         }
     } else if (dumb->mode == DUMB_GAIN_2) {
         if (now > dumb->trans_time + GAIN_2_RTTS*dumb->last_rtt) {
-            dumb_enter_drain(sk, now);
-        }
-    } else if (dumb->mode == DUMB_DRAIN) {
-        if (now > dumb->trans_time + DRAIN_RTTS*dumb->last_rtt) {
             dumb_enter_stable(sk, now);
         }
     } else {
@@ -392,6 +371,13 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
     }
 
     tp->snd_cwnd = clamp_t(u32, tp->snd_cwnd, MIN_CWND, MAX_TCP_WINDOW);
+
+    // If we're in a GAIN mode don't limit throughput, otherwise pace
+    // at the predicted throughput.
+    if (dumb->mode == DUMB_GAIN_1 || dumb->mode == DUMB_GAIN_2)
+        sk->sk_pacing_rate = 0;
+    else
+        sk->sk_pacing_rate = ((u64) tp->snd_cwnd)*tp->mss_cache*USEC_PER_SEC/dumb->last_rtt;
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 
