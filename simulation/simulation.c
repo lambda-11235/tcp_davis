@@ -24,6 +24,10 @@ inline double app_rate(double t, size_t flow) {
     return 2*max_bw(t);
 }
 
+inline double flow_start_time(size_t flow) {
+    return 0;
+}
+
 inline unsigned long bdp(double t) { return max_bw(t)*min_rtt(t)/MSS; }
 inline unsigned long buf_size(double t) { return bdp(t); }
 
@@ -87,7 +91,11 @@ int main(int argc, char *argv[])
         }
 
         for (size_t i = 0; i < NUM_FLOWS; i++) {
-            if (inflight[i] < d[i].cwnd && next_send_time[i] < time) {
+            bool cond = flow_start_time(i) < time;
+            cond = cond && inflight[i] < d[i].cwnd;
+            cond = cond && next_send_time[i] < time;
+
+            if (cond) {
                 event = SEND;
                 flow = i;
                 time = next_send_time[i];
