@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "dumb.h"
+#include "davis.h"
 #include "packet.h"
 
 
@@ -40,7 +40,7 @@ enum event_type { NONE, SEND, ARRIVAL, DEPARTURE };
 
 int main(int argc, char *argv[])
 {
-    struct dumb d[NUM_FLOWS];
+    struct davis d[NUM_FLOWS];
 
     srand(time(NULL));
 
@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     double rtt[NUM_FLOWS] = {0};
 
     for (size_t i = 0; i < NUM_FLOWS; i++)
-        dumb_init(&d[i], time, MSS);
+        davis_init(&d[i], time, MSS);
 
     while (time < RUNTIME) {
         enum event_type event = NONE;
@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
             inflight[flow]--;
 
             rtt[flow] = time - bn_packet->send_time;
-            dumb_on_ack(&d[flow], time, rtt[flow], inflight[flow]);
+            davis_on_ack(&d[flow], time, rtt[flow], inflight[flow]);
 
             next_bottleneck_time = time + MSS/max_bw(time);
             free(bn_packet);
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
             size_t flow = lost_packet->flow_id;
             inflight[flow]--;
             losses[flow]++;
-            dumb_on_loss(&d[flow], time);
+            davis_on_loss(&d[flow], time);
 
             free(lost_packet);
             lost_packet = packet_buffer_dequeue(&lost);

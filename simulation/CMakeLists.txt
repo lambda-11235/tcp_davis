@@ -3,4 +3,4 @@ project(SIMULATION)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-add_executable(simulation simulation.c dumb.c packet.c)
+add_executable(simulation simulation.c davis.c packet.c)

@@ -1,8 +1,8 @@
 
 QDEV := eth3
 
-obj-m += tcp_dumb.o
-mpc_cc-y += tcp_dumb.o
+obj-m += tcp_davis.o
+mpc_cc-y += tcp_davis.o
 ccflags-y += -g -O0 -DDEBUG
 
 all:

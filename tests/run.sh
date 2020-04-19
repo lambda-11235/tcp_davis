@@ -35,7 +35,7 @@ do
 
     cd $DIR
 
-    for cc in dumb bbr reno vegas
+    for cc in davis bbr reno vegas
     do
         sysctl net.ipv4.tcp_congestion_control=$cc
 

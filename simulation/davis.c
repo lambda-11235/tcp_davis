@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "dumb.h"
+#include "davis.h"
 
 
 static const unsigned long MIN_CWND = 4;
@@ -27,20 +27,20 @@ static const double RTT_INF = 10;
 #define clamp(x, mn, mx) (min(max((x), (mn)), (mx)))
 
 
-static inline bool in_slow_start(struct dumb *d)
+static inline bool in_slow_start(struct davis *d)
 {
     return d->cwnd < d->ssthresh;
 }
 
 
-static inline unsigned long gain_cwnd(struct dumb *d)
+static inline unsigned long gain_cwnd(struct davis *d)
 {
     unsigned long cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
     return max(d->bdp + MIN_CWND, cwnd);
 }
 
 
-static inline unsigned long ss_cwnd(struct dumb *d)
+static inline unsigned long ss_cwnd(struct davis *d)
 {
     unsigned long cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
     return max(d->bdp + MIN_CWND, cwnd);
@@ -50,9 +50,9 @@ static inline unsigned long ss_cwnd(struct dumb *d)
 
 
 ////////// Enter Routines START //////////
-static void enter_slow_start(struct dumb *d, double time)
+static void enter_slow_start(struct davis *d, double time)
 {
-    d->mode = DUMB_GAIN_1;
+    d->mode = DAVIS_GAIN_1;
     d->trans_time = time;
 
     d->bdp = MIN_CWND;
@@ -64,9 +64,9 @@ static void enter_slow_start(struct dumb *d, double time)
 }
 
 
-static void enter_recovery(struct dumb *d, double time)
+static void enter_recovery(struct davis *d, double time)
 {
-    d->mode = DUMB_RECOVER;
+    d->mode = DAVIS_RECOVER;
     d->trans_time = time;
 
     d->cwnd = d->bdp;
@@ -74,9 +74,9 @@ static void enter_recovery(struct dumb *d, double time)
 }
 
 
-static void enter_stable(struct dumb *d, double time)
+static void enter_stable(struct davis *d, double time)
 {
-    d->mode = DUMB_STABLE;
+    d->mode = DAVIS_STABLE;
     d->trans_time = time;
 
     d->cwnd = d->bdp;
@@ -89,9 +89,9 @@ static void enter_stable(struct dumb *d, double time)
 }
 
 
-static void enter_drain(struct dumb *d, double time)
+static void enter_drain(struct davis *d, double time)
 {
-    d->mode = DUMB_DRAIN;
+    d->mode = DAVIS_DRAIN;
     d->trans_time = time;
 
     d->cwnd = MIN_CWND;
@@ -99,18 +99,18 @@ static void enter_drain(struct dumb *d, double time)
 }
 
 
-static void enter_gain_1(struct dumb *d, double time)
+static void enter_gain_1(struct davis *d, double time)
 {
-    d->mode = DUMB_GAIN_1;
+    d->mode = DAVIS_GAIN_1;
     d->trans_time = time;
 
     d->cwnd = gain_cwnd(d);
 }
 
 
-static void enter_gain_2(struct dumb *d, double time)
+static void enter_gain_2(struct davis *d, double time)
 {
-    d->mode = DUMB_GAIN_2;
+    d->mode = DAVIS_GAIN_2;
     d->trans_time = time;
 
     d->bdp = 0;
@@ -120,10 +120,10 @@ static void enter_gain_2(struct dumb *d, double time)
 
 
 
-void dumb_init(struct dumb *d, double time,
+void davis_init(struct davis *d, double time,
                unsigned long mss)
 {
-    d->mode = DUMB_RECOVER;
+    d->mode = DAVIS_RECOVER;
     d->trans_time = time;
 
     d->mss = mss;
@@ -142,17 +142,17 @@ void dumb_init(struct dumb *d, double time,
 }
 
 
-static void dumb_slow_start(struct dumb *d, double time, double rtt)
+static void davis_slow_start(struct davis *d, double time, double rtt)
 {
-    if (d->mode == DUMB_GAIN_1) {
+    if (d->mode == DAVIS_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
-            d->mode = DUMB_GAIN_2;
+            d->mode = DAVIS_GAIN_2;
             d->trans_time = time;
         }
-    } else if (d->mode == DUMB_GAIN_2) {
+    } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
             if (d->bdp > d->ss_last_bdp) {
-                d->mode = DUMB_GAIN_1;
+                d->mode = DAVIS_GAIN_1;
                 d->trans_time = time;
 
                 d->cwnd = ss_cwnd(d);
@@ -168,11 +168,11 @@ static void dumb_slow_start(struct dumb *d, double time, double rtt)
 }
 
 
-void dumb_on_ack(struct dumb *d, double time, double rtt,
+void davis_on_ack(struct davis *d, double time, double rtt,
                  unsigned long inflight)
 {
     if (rtt > 0) {
-        if (d->mode == DUMB_GAIN_2) {
+        if (d->mode == DAVIS_GAIN_2) {
             unsigned long est_bdp = inflight*d->min_rtt/rtt;
             d->bdp = max(d->bdp, est_bdp);
         }
@@ -183,22 +183,22 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 
 
     if (in_slow_start(d)) {
-        dumb_slow_start(d, time, rtt);
-    } else if (d->mode == DUMB_RECOVER || d->mode == DUMB_STABLE) {
-        unsigned long rtts = d->mode == DUMB_RECOVER ? REC_RTTS : STABLE_RTTS;
+        davis_slow_start(d, time, rtt);
+    } else if (d->mode == DAVIS_RECOVER || d->mode == DAVIS_STABLE) {
+        unsigned long rtts = d->mode == DAVIS_RECOVER ? REC_RTTS : STABLE_RTTS;
 
         if (time > d->trans_time + rtts*d->last_rtt) {
             enter_drain(d, time);
         }
-    } else if (d->mode == DUMB_DRAIN) {
+    } else if (d->mode == DAVIS_DRAIN) {
         if (time > d->trans_time + DRAIN_RTTS*d->last_rtt) {
             enter_gain_1(d, time);
         }
-    } else if (d->mode == DUMB_GAIN_1) {
+    } else if (d->mode == DAVIS_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
             enter_gain_2(d, time);
         }
-    } else if (d->mode == DUMB_GAIN_2) {
+    } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
             enter_stable(d, time);
         }
@@ -212,9 +212,9 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 }
 
 
-void dumb_on_loss(struct dumb *d, double time)
+void davis_on_loss(struct davis *d, double time)
 {
-    bool react = d->mode == DUMB_GAIN_1 || d->mode == DUMB_GAIN_2;
+    bool react = d->mode == DAVIS_GAIN_1 || d->mode == DAVIS_GAIN_2;
     react = react && d->inc_factor < MAX_INC_FACTOR;
     react = react || in_slow_start(d);
 
