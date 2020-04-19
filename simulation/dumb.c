@@ -173,18 +173,8 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
 {
     if (rtt > 0) {
         if (d->mode == DUMB_GAIN_2) {
-            // Here we are essentially assigning the BDP are median
-            // estimate. This is because we only enter a steady-state
-            // estimation when we get an equal amount of over and
-            // under estimates.
             unsigned long est_bdp = inflight*d->min_rtt/rtt;
-
-            if (d->bdp == 0)
-                d->bdp = est_bdp;
-            else if (d->bdp < est_bdp)
-                d->bdp++;
-            else
-                d->bdp--;
+            d->bdp = max(d->bdp, est_bdp);
         }
 
         d->last_rtt = rtt;
@@ -218,11 +208,7 @@ void dumb_on_ack(struct dumb *d, double time, double rtt,
     }
 
     d->cwnd = clamp(d->cwnd, MIN_CWND, MAX_CWND);
-
-    if (d->mode == DUMB_GAIN_1 || d->mode == DUMB_GAIN_2)
-        d->pacing_rate = 0;
-    else
-        d->pacing_rate = d->cwnd*d->mss/d->last_rtt;
+    d->pacing_rate = d->cwnd*d->mss/d->last_rtt;
 }
 
 

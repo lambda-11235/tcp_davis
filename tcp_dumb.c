@@ -170,9 +170,8 @@ static void dumb_enter_stable(struct sock *sk, u64 now)
 
     dumb->min_rtt = dumb->last_rtt;
 
-    //printk(KERN_DEBUG "tcp_dumb: max_rate = %llu, "
-    //       "min_rtt = %u, bdp = %u, gain_cwnd = %u\n",
-    //       dumb->max_rate, dumb->min_rtt, dumb->bdp, tp->snd_cwnd);
+    //printk(KERN_DEBUG "tcp_dumb: min_rtt = %u, bdp = %u\n",
+    //       dumb->min_rtt, dumb->bdp);
 }
 
 
@@ -324,18 +323,8 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     if (rs->rtt_us > 0) {
         if (dumb->mode == DUMB_GAIN_2) {
-            // Here we are essentially assigning the BDP are median
-            // estimate. This is because we only enter a steady-state
-            // estimation when we get an equal amount of over and
-            // under estimates.
             u32 est_bdp = rs->prior_in_flight*dumb->min_rtt/rs->rtt_us;
-
-            if (dumb->bdp == 0)
-                dumb->bdp = est_bdp;
-            else if (dumb->bdp < est_bdp)
-                dumb->bdp++;
-            else
-                dumb->bdp--;
+            dumb->bdp = max(dumb->bdp, est_bdp);
         }
 
         dumb->last_rtt = rs->rtt_us;
@@ -371,13 +360,7 @@ void tcp_dumb_cong_control(struct sock *sk, const struct rate_sample *rs)
     }
 
     tp->snd_cwnd = clamp_t(u32, tp->snd_cwnd, MIN_CWND, MAX_TCP_WINDOW);
-
-    // If we're in a GAIN mode don't limit throughput, otherwise pace
-    // at the predicted throughput.
-    if (dumb->mode == DUMB_GAIN_1 || dumb->mode == DUMB_GAIN_2)
-        sk->sk_pacing_rate = 0;
-    else
-        sk->sk_pacing_rate = ((u64) tp->snd_cwnd)*tp->mss_cache*USEC_PER_SEC/dumb->last_rtt;
+    sk->sk_pacing_rate = tp->snd_cwnd*rate_adj(sk)/dumb->last_rtt;
 }
 EXPORT_SYMBOL_GPL(tcp_dumb_cong_control);
 
