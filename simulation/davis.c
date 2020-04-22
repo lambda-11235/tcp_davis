@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "davis.h"
 
@@ -35,14 +36,37 @@ static inline bool in_slow_start(struct davis *d)
 
 static inline unsigned long gain_cwnd(struct davis *d)
 {
-    unsigned long cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
+    unsigned long cwnd;
+
+    if (MIN_INC_FACTOR < 1) {
+        fprintf(stderr, "MIN_INC_FACTOR must be greater than 0\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (MAX_INC_FACTOR < MIN_INC_FACTOR) {
+        fprintf(stderr, "MAX_INC_FACTOR must be greater than MIN_INC_FACTOR (%lu)\n",
+                MIN_INC_FACTOR);
+        exit(EXIT_FAILURE);
+    }
+
+    d->inc_factor = clamp(d->inc_factor, MIN_INC_FACTOR, MAX_INC_FACTOR);
+    cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
+
     return max(d->bdp + MIN_CWND, cwnd);
 }
 
 
 static inline unsigned long ss_cwnd(struct davis *d)
 {
-    unsigned long cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
+    unsigned long cwnd;
+
+    if (SS_INC_FACTOR < 1) {
+        fprintf(stderr, "SS_INC_FACTOR must be greater than 0\n");
+        exit(EXIT_FAILURE);
+    }
+
+    cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
+
     return max(d->bdp + MIN_CWND, cwnd);
 }
 
@@ -83,7 +107,6 @@ static void enter_stable(struct davis *d, double time)
     d->ssthresh = d->cwnd;
 
     d->inc_factor--;
-    d->inc_factor = max(d->inc_factor, MIN_INC_FACTOR);
 
     d->min_rtt = d->last_rtt;
 }
@@ -208,7 +231,11 @@ void davis_on_ack(struct davis *d, double time, double rtt,
     }
 
     d->cwnd = clamp(d->cwnd, MIN_CWND, MAX_CWND);
-    d->pacing_rate = d->cwnd*d->mss/d->last_rtt;
+
+    if (d->last_rtt > 0)
+        d->pacing_rate = d->cwnd*d->mss/d->last_rtt;
+    else
+        d->pacing_rate = 0;
 }
 
 
@@ -220,8 +247,6 @@ void davis_on_loss(struct davis *d, double time)
 
     if (react) {
         d->inc_factor *= 2;
-        d->inc_factor = min(d->inc_factor, MAX_INC_FACTOR);
-
         enter_recovery(d, time);
     }
 }

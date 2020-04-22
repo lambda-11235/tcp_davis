@@ -44,6 +44,8 @@
 #include <net/tcp.h>
 
 
+#define DAVIS_PRNT "tcp_davis: "
+
 static const u32 MIN_CWND = 4;
 
 static const u32 REC_RTTS = 1;
@@ -96,14 +98,43 @@ struct davis {
 
 static inline u32 gain_cwnd(struct davis *davis)
 {
-    u32 cwnd = (davis->inc_factor + 1)*davis->bdp/davis->inc_factor;
+    u32 cwnd;
+
+    if (MIN_INC_FACTOR < 1) {
+        MIN_INC_FACTOR = 1;
+
+        printk(KERN_WARNING DAVIS_PRNT
+               "MIN_INC_FACTOR must be greater than 0\n");
+    }
+
+    if (MAX_INC_FACTOR < MIN_INC_FACTOR) {
+        MAX_INC_FACTOR = MIN_INC_FACTOR;
+
+        printk(KERN_WARNING DAVIS_PRNT
+               "MAX_INC_FACTOR must be greater than MIN_INC_FACTOR (%u)\n",
+               MIN_INC_FACTOR);
+    }
+
+    davis->inc_factor = clamp_t(u32, davis->inc_factor, MIN_INC_FACTOR, MAX_INC_FACTOR);
+    cwnd = (davis->inc_factor + 1)*davis->bdp/davis->inc_factor;
+
     return max_t(u32, davis->bdp + MIN_CWND, cwnd);
 }
 
 
 static inline u32 ss_cwnd(struct davis *davis)
 {
-    u32 cwnd = (SS_INC_FACTOR + 1)*davis->bdp/SS_INC_FACTOR;
+    u32 cwnd;
+
+    if (SS_INC_FACTOR < 1) {
+        SS_INC_FACTOR = 1;
+
+        printk(KERN_WARNING DAVIS_PRNT
+               "SS_INC_FACTOR must be greater than 0\n");
+    }
+
+    cwnd = (SS_INC_FACTOR + 1)*davis->bdp/SS_INC_FACTOR;
+
     return max_t(u32, davis->bdp + MIN_CWND, cwnd);
 }
 
@@ -135,7 +166,7 @@ static void davis_enter_slow_start(struct sock *sk, u64 now)
 
     davis->bdp = MIN_CWND;
     davis->ss_last_bdp = 0;
-    
+
     tp->snd_cwnd = MIN_CWND;
 
     davis->min_rtt = RTT_INF;
@@ -166,11 +197,11 @@ static void davis_enter_stable(struct sock *sk, u64 now)
     tp->snd_ssthresh = tp->snd_cwnd;
 
     davis->inc_factor--;
-    davis->inc_factor = max_t(u32, davis->inc_factor, MIN_INC_FACTOR);
 
     davis->min_rtt = davis->last_rtt;
 
-    //printk(KERN_DEBUG "tcp_davis: min_rtt = %u, bdp = %u\n",
+    //printk(KERN_DEBUG DAVIS_PRNT
+    //       "min_rtt = %u, bdp = %u\n",
     //       davis->min_rtt, davis->bdp);
 }
 
@@ -276,8 +307,6 @@ u32 tcp_davis_undo_cwnd(struct sock *sk)
 
     if (react) {
         davis->inc_factor *= 2;
-        davis->inc_factor = min_t(u32, davis->inc_factor, MAX_INC_FACTOR);
-
         davis_enter_recovery(sk, now);
     }
 
@@ -360,7 +389,11 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
     }
 
     tp->snd_cwnd = clamp_t(u32, tp->snd_cwnd, MIN_CWND, MAX_TCP_WINDOW);
-    sk->sk_pacing_rate = tp->snd_cwnd*rate_adj(sk)/davis->last_rtt;
+
+    if (davis->last_rtt > 0)
+        sk->sk_pacing_rate = tp->snd_cwnd*rate_adj(sk)/davis->last_rtt;
+    else
+        sk->sk_pacing_rate = 0;
 }
 EXPORT_SYMBOL_GPL(tcp_davis_cong_control);
 
