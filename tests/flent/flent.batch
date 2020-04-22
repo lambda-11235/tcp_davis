@@ -1,0 +1,60 @@
+# -*- mode:conf -*-
+[Command::setup_cc]
+exec = sudo sysctl net.ipv4.tcp_congestion_control=${cc}
+type = pre
+essential = yes
+
+
+[Batch::global]
+extended_metadata = no
+debug_error = yes
+debug_log = yes
+title = ${cc}
+output_path = batch-${batch_time}/${batch_name}
+ip_version = 4
+length = 60
+
+filename_extra = ${cc}-${repetition}
+commands = setup_cc
+repetitions = 1
+pause = 5
+abstract = yes
+
+for_cc = davis, bbr, reno, vegas
+
+
+[Batch::tcp-1up]
+inherits = global
+test_name = tcp_1up
+disabled = no
+
+[Batch::tcp-2up]
+inherits = global
+test_name = tcp_2up
+disabled = no
+
+[Batch::tcp-12up]
+inherits = global
+test_name = tcp_12up
+disabled = no
+
+[Batch::rrul_up]
+inherits = global
+test_name = rrul_up
+disabled = no
+
+
+[Arg::davis]
+cc = davis
+
+[Arg::bbr]
+cc = bbr
+
+[Arg::reno]
+cc = reno
+
+[Arg::cubic]
+cc = cubic
+
+[Arg::vegas]
+cc = vegas
