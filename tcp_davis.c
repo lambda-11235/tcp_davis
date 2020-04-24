@@ -352,11 +352,12 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     if (rs->rtt_us > 0) {
         if (davis->mode == DAVIS_GAIN_2) {
-            // Round up to be more aggressive. This helps promote
-            // fairness, as flows with less bandwidth tend to give up
-            // bandwidth when the are submissive. Aggressive low
-            // bandwidth flows instead take bandwidth from larger
-            // flows.
+            // Round up to be improve fairness. Flows with smaller
+            // bandwidth shair tend to be more sensitive to
+            // rounding. Notably, if we round down, then smaller flows
+            // tend to not take bandwidth from larger ones. Rounding
+            // up allows these smaller flows to compete with larger
+            // ones.
             u32 est_bdp = rs->prior_in_flight*davis->min_rtt;
             est_bdp = DIV_ROUND_UP(est_bdp, rs->rtt_us);
 
