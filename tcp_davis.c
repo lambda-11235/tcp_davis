@@ -96,7 +96,7 @@ struct davis {
 };
 
 
-static inline u32 gain_cwnd(struct davis *davis)
+static u32 gain_cwnd(struct davis *davis)
 {
     u32 cwnd;
 
@@ -122,7 +122,7 @@ static inline u32 gain_cwnd(struct davis *davis)
 }
 
 
-static inline u32 ss_cwnd(struct davis *davis)
+static u32 ss_cwnd(struct davis *davis)
 {
     u32 cwnd;
 
@@ -352,7 +352,14 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     if (rs->rtt_us > 0) {
         if (davis->mode == DAVIS_GAIN_2) {
-            u32 est_bdp = rs->prior_in_flight*davis->min_rtt/rs->rtt_us;
+            // Round up to be more aggressive. This helps promote
+            // fairness, as flows with less bandwidth tend to give up
+            // bandwidth when the are submissive. Aggressive low
+            // bandwidth flows instead take bandwidth from larger
+            // flows.
+            u32 est_bdp = rs->prior_in_flight*davis->min_rtt;
+            est_bdp = DIV_ROUND_UP(est_bdp, rs->rtt_us);
+
             davis->bdp = max(davis->bdp, est_bdp);
         }
 
@@ -376,6 +383,10 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
     } else if (davis->mode == DAVIS_GAIN_1) {
         if (now > davis->trans_time + GAIN_1_RTTS*davis->last_rtt) {
             davis_enter_gain_2(sk, now);
+        } else {
+            // Continually restimate snd_cwnd to take bandwidth from
+            // larger flows and promote fairness.
+            tp->snd_cwnd = gain_cwnd(davis);
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
         if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {

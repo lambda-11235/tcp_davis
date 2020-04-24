@@ -1,5 +1,6 @@
 
 #include <limits.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,7 @@ static inline bool in_slow_start(struct davis *d)
 }
 
 
-static inline unsigned long gain_cwnd(struct davis *d)
+static unsigned long gain_cwnd(struct davis *d)
 {
     unsigned long cwnd;
 
@@ -56,7 +57,7 @@ static inline unsigned long gain_cwnd(struct davis *d)
 }
 
 
-static inline unsigned long ss_cwnd(struct davis *d)
+static unsigned long ss_cwnd(struct davis *d)
 {
     unsigned long cwnd;
 
@@ -196,7 +197,7 @@ void davis_on_ack(struct davis *d, double time, double rtt,
 {
     if (rtt > 0) {
         if (d->mode == DAVIS_GAIN_2) {
-            unsigned long est_bdp = inflight*d->min_rtt/rtt;
+            unsigned long est_bdp = ceil(inflight*d->min_rtt/rtt);
             d->bdp = max(d->bdp, est_bdp);
         }
 
@@ -220,6 +221,8 @@ void davis_on_ack(struct davis *d, double time, double rtt,
     } else if (d->mode == DAVIS_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
             enter_gain_2(d, time);
+        } else {
+            d->cwnd = gain_cwnd(d);
         }
     } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
