@@ -7,6 +7,9 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+from common import calcRates
+
+
 parser = argparse.ArgumentParser(description="Plot")
 parser.add_argument('data_file', type=str,
         help="The data file to plot from.")
@@ -18,6 +21,8 @@ parser.add_argument('--rate-limit', type=float, nargs=2,
         help="")
 parser.add_argument('--rtt-limit', type=float, nargs=2,
         help="")
+parser.add_argument('--rate-interval', type=float,
+        help="")
 args = parser.parse_args()
 
 mpl.style.use('seaborn-bright')
@@ -27,6 +32,8 @@ mpl.rc('figure', dpi=200)
 data = pd.read_csv(args.data_file)
 data = data.loc[data.flow_id == args.flow]
 time = data.time
+
+rate = calcRates(time, data['bytes_sent'], interval=args.rate_interval)
 
 
 ### CWND ###
@@ -61,7 +68,7 @@ ax.legend()
 
 
 ### Rate ###
-rate = data.rate/2**17
+rate = rate/2**17
 pacingRate = data.pacing_rate/2**17
 
 fig = plt.figure()

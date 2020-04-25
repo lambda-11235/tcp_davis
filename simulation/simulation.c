@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     if ((int) (RAND_MAX*LOSS_PROB) == 0 && LOSS_PROB != 0.0)
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
-    printf("flow_id,time,rtt,cwnd,rate,losses,");
+    printf("flow_id,time,rtt,cwnd,bytes_sent,losses,");
     printf("pacing_rate,min_rtt,bdp,mode\n");
 
     unsigned int last_perc = 0;
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     double next_send_time[NUM_FLOWS] = {time};
 
     unsigned long inflight[NUM_FLOWS] = {0};
-    double rate_sent[NUM_FLOWS] = {0};
+    double bytes_sent[NUM_FLOWS] = {0};
     unsigned long losses[NUM_FLOWS] = {0};
     double last_loss_time[NUM_FLOWS] = {0};
     double rtt[NUM_FLOWS] = {0};
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 
             packet_buffer_enqueue(&network, p);
 
-            rate_sent[flow] += MSS;
+            bytes_sent[flow] += MSS;
             inflight[flow]++;
 
             next_send_time[flow] = time + MSS/send_rate[flow];
@@ -175,13 +175,12 @@ int main(int argc, char *argv[])
         /*** Log data ***/
         if (time > last_print_time + report_interval(time)) {
             for (size_t i = 0; i < NUM_FLOWS; i++) {
-                double rate = rate_sent[i]/(time - last_print_time);
-                rate_sent[i] = 0;
-
                 printf("%ld,%f,%f,%lu,%f,%lu,", i, time, rtt[i],
-                       d[i].cwnd, rate, losses[i]);
+                       d[i].cwnd, bytes_sent[i], losses[i]);
                 printf("%f,%f,%lu,%u\n", d->pacing_rate, d[i].min_rtt,
                        d[i].bdp, d[i].mode);
+
+                bytes_sent[i] = 0;
             }
 
             last_print_time = time;

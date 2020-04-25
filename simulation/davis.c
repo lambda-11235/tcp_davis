@@ -51,7 +51,7 @@ static unsigned long gain_cwnd(struct davis *d)
     }
 
     d->inc_factor = clamp(d->inc_factor, MIN_INC_FACTOR, MAX_INC_FACTOR);
-    cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
+    cwnd = d->bdp*(d->last_rtt + d->min_rtt/d->inc_factor)/d->last_rtt;
 
     return max(d->bdp + MIN_CWND, cwnd);
 }
@@ -66,7 +66,7 @@ static unsigned long ss_cwnd(struct davis *d)
         exit(EXIT_FAILURE);
     }
 
-    cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
+    cwnd = d->bdp*(d->last_rtt + d->min_rtt/SS_INC_FACTOR)/d->last_rtt;
 
     return max(d->bdp + MIN_CWND, cwnd);
 }
@@ -221,8 +221,6 @@ void davis_on_ack(struct davis *d, double time, double rtt,
     } else if (d->mode == DAVIS_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
             enter_gain_2(d, time);
-        } else {
-            d->cwnd = gain_cwnd(d);
         }
     } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
