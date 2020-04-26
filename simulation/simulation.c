@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     double next_send_time[NUM_FLOWS] = {time};
 
     unsigned long inflight[NUM_FLOWS] = {0};
-    double bytes_sent[NUM_FLOWS] = {0};
+    unsigned long bytes_sent[NUM_FLOWS] = {0};
     unsigned long losses[NUM_FLOWS] = {0};
     double last_loss_time[NUM_FLOWS] = {0};
     double rtt[NUM_FLOWS] = {0};
@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
         /*** Log data ***/
         if (time > last_print_time + report_interval(time)) {
             for (size_t i = 0; i < NUM_FLOWS; i++) {
-                printf("%ld,%f,%f,%lu,%f,%lu,", i, time, rtt[i],
+                printf("%ld,%f,%f,%lu,%lu,%lu,", i, time, rtt[i],
                        d[i].cwnd, bytes_sent[i], losses[i]);
                 printf("%f,%f,%lu,%u\n", d->pacing_rate, d[i].min_rtt,
                        d[i].bdp, d[i].mode);
