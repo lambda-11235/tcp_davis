@@ -384,10 +384,6 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
     } else if (davis->mode == DAVIS_GAIN_1) {
         if (now > davis->trans_time + GAIN_1_RTTS*davis->last_rtt) {
             davis_enter_gain_2(sk, now);
-        } else {
-            // Continually restimate snd_cwnd to take bandwidth from
-            // larger flows and promote fairness.
-            tp->snd_cwnd = gain_cwnd(davis);
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
         if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {

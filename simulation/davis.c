@@ -51,7 +51,7 @@ static unsigned long gain_cwnd(struct davis *d)
     }
 
     d->inc_factor = clamp(d->inc_factor, MIN_INC_FACTOR, MAX_INC_FACTOR);
-    cwnd = d->bdp*(d->last_rtt + d->min_rtt/d->inc_factor)/d->last_rtt;
+    cwnd = (d->inc_factor + 1)*d->bdp/d->inc_factor;
 
     return max(d->bdp + MIN_CWND, cwnd);
 }
@@ -66,7 +66,7 @@ static unsigned long ss_cwnd(struct davis *d)
         exit(EXIT_FAILURE);
     }
 
-    cwnd = d->bdp*(d->last_rtt + d->min_rtt/SS_INC_FACTOR)/d->last_rtt;
+    cwnd = (SS_INC_FACTOR + 1)*d->bdp/SS_INC_FACTOR;
 
     return max(d->bdp + MIN_CWND, cwnd);
 }
