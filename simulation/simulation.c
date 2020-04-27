@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
             inflight[flow]--;
 
             rtt[flow] = time - bn_packet->send_time;
-            davis_on_ack(&d[flow], time, rtt[flow], MSS);
+            davis_on_ack(&d[flow], time, rtt[flow], 1);
 
             next_bottleneck_time = time + MSS/max_bw(time);
             free(bn_packet);

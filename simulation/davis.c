@@ -14,11 +14,13 @@ static const unsigned long MAX_CWND = 33554432;//32768;
 static const unsigned long MIN_GAIN_CWND = 4;
 static const double GAIN_RATE = 1048576;
 
-static const unsigned long DRAIN_RTTS = 2;
+static const unsigned long STABLE_RTTS = 4;
+static const unsigned long DRAIN_RTTS = 1;
 static const unsigned long GAIN_1_RTTS = 1;
 static const unsigned long GAIN_2_RTTS = 1;
 
 static const double RTT_INF = 10;
+static const double RTT_TIMEOUT = 10;
 
 
 #define min(x, y) ((x) < (y) ? (x) : (y))
@@ -43,6 +45,15 @@ static void enter_slow_start(struct davis *d, double time)
     d->cwnd = MIN_CWND;
 
     d->min_rtt = d->last_rtt;
+}
+
+
+static unsigned long est_bdp(struct davis *d)
+{
+    if (d->dinterval > 0)
+        return ceil(d->delivered*d->min_rtt/d->dinterval);
+    else
+        return d->bdp;
 }
 
 
@@ -75,6 +86,7 @@ void davis_init(struct davis *d, double time,
 
     d->last_rtt = 1;
     d->min_rtt = RTT_INF;
+    d->min_rtt_time = time;
 }
 
 
@@ -90,7 +102,7 @@ static void davis_slow_start(struct davis *d, double time, double rtt)
         }
     } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
-            d->bdp = ceil(d->delivered*d->min_rtt/d->dinterval/d->mss);
+            d->bdp = est_bdp(d);
 
             if (d->bdp > d->ss_last_bdp) {
                 d->mode = DAVIS_GAIN_1;
@@ -114,21 +126,38 @@ static void davis_slow_start(struct davis *d, double time, double rtt)
 
 
 void davis_on_ack(struct davis *d, double time, double rtt,
-                 unsigned long delivered)
+                 unsigned long pkts_delivered)
 {
     if (rtt > 0) {
         if (d->mode == DAVIS_GAIN_2) {
-            d->delivered += delivered;
+            d->delivered += pkts_delivered;
             d->dinterval = time - d->trans_time;
         }
 
         d->last_rtt = rtt;
-        d->min_rtt = min(d->min_rtt, rtt);
+
+        if (rtt < d->min_rtt) {
+            d->min_rtt = rtt;
+            d->min_rtt_time = time;
+        }
     }
 
 
     if (in_slow_start(d)) {
         davis_slow_start(d, time, rtt);
+    } else if (d->mode == DAVIS_STABLE) {
+        if (time > d->trans_time + STABLE_RTTS*d->last_rtt) {
+            d->mode = DAVIS_DRAIN;
+            d->trans_time = time;
+
+            if (time > d->min_rtt_time + RTT_TIMEOUT) {
+                d->cwnd = MIN_CWND;
+                d->min_rtt = d->last_rtt;
+                d->min_rtt_time = time;
+            } else {
+                d->cwnd = d->bdp - gain_cwnd(d);
+            }
+        }
     } else if (d->mode == DAVIS_DRAIN) {
         if (time > d->trans_time + DRAIN_RTTS*d->last_rtt) {
             d->mode = DAVIS_GAIN_1;
@@ -146,12 +175,11 @@ void davis_on_ack(struct davis *d, double time, double rtt,
         }
     } else if (d->mode == DAVIS_GAIN_2) {
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
-            d->bdp = ceil(d->delivered*d->min_rtt/d->dinterval/d->mss);
-
-            d->mode = DAVIS_DRAIN;
+            d->mode = DAVIS_STABLE;
             d->trans_time = time;
 
-            d->cwnd = d->bdp - gain_cwnd(d);
+            d->bdp = est_bdp(d);
+            d->cwnd = d->bdp;
         }
     } else {
         fprintf(stderr, "Got to undefined mode %d at time %f\n", d->mode, time);
@@ -159,7 +187,7 @@ void davis_on_ack(struct davis *d, double time, double rtt,
         d->mode = DAVIS_DRAIN;
         d->trans_time = time;
 
-            d->cwnd = d->bdp - gain_cwnd(d);
+        d->cwnd = d->bdp - gain_cwnd(d);
     }
 
     d->cwnd = clamp(d->cwnd, MIN_CWND, MAX_CWND);
