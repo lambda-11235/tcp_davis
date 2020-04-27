@@ -5,8 +5,7 @@
 #define _DAVIS_H_
 
 
-enum davis_mode { DAVIS_RECOVER, DAVIS_STABLE, DAVIS_DRAIN,
-                 DAVIS_GAIN_1, DAVIS_GAIN_2 };
+enum davis_mode { DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
 
 struct davis {
     enum davis_mode mode;
@@ -16,10 +15,11 @@ struct davis {
     unsigned long cwnd;
     unsigned long ssthresh;
 
+    unsigned long delivered;
+    double dinterval;
+
     unsigned long bdp;
     unsigned long ss_last_bdp;
-
-    unsigned long inc_factor;
 
     double pacing_rate;
 
@@ -31,7 +31,7 @@ struct davis {
 void davis_init(struct davis *d, double time,
                unsigned long mss);
 void davis_on_ack(struct davis *d, double time, double rtt,
-                 unsigned long inflight);
+                 unsigned long delivered);
 void davis_on_loss(struct davis *d, double time);
 
 
