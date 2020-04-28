@@ -57,7 +57,6 @@ struct davis {
     u32 bdp;
     u32 ss_last_bdp;
 
-    u32 last_rtt;
     u32 min_rtt;
 };
 
@@ -100,7 +99,7 @@ static void davis_enter_slow_start(struct sock *sk, u64 now)
 
     tp->snd_cwnd = MIN_CWND;
 
-    davis->min_rtt = davis->last_rtt;
+    davis->min_rtt = tp->srtt_us;
 }
 
 
@@ -124,7 +123,6 @@ void tcp_davis_init(struct sock *sk)
 
     sk->sk_pacing_rate = 0;
 
-    davis->last_rtt = 1;
     davis->min_rtt = RTT_INF;
     davis->min_rtt_time = now;
 }
@@ -181,7 +179,7 @@ static void davis_slow_start(struct sock *sk, u64 now)
     struct tcp_sock *tp = tcp_sk(sk);
 
     if (davis->mode == DAVIS_GAIN_1) {
-        if (now > davis->trans_time + GAIN_1_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + GAIN_1_RTTS*tp->srtt_us) {
             davis->mode = DAVIS_GAIN_2;
             davis->trans_time = now;
 
@@ -189,7 +187,7 @@ static void davis_slow_start(struct sock *sk, u64 now)
             davis->delivered_start_time = tp->delivered_mstamp;
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
-        if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + GAIN_2_RTTS*tp->srtt_us) {
             u32 diff_deliv = tp->delivered - davis->delivered_start;
             u32 interval = tp->delivered_mstamp - davis->delivered_start_time;
 
@@ -224,26 +222,22 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
     struct tcp_sock *tp = tcp_sk(sk);
     u64 now = davis_current_time(sk);
 
-    if (rs->rtt_us > 0) {
-        davis->last_rtt = rs->rtt_us;
-
-        if (rs->rtt_us < davis->min_rtt) {
-            davis->min_rtt = rs->rtt_us;
-            davis->min_rtt_time = now;
-        }
+    if (tp->srtt_us > 0 && tp->srtt_us < davis->min_rtt) {
+        davis->min_rtt = tp->srtt_us;
+        davis->min_rtt_time = now;
     }
 
 
     if (tcp_in_slow_start(tp)) {
         davis_slow_start(sk, now);
     } else if (davis->mode == DAVIS_STABLE) {
-        if (now > davis->trans_time + STABLE_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + STABLE_RTTS*tp->srtt_us) {
             if (now > davis->min_rtt_time + RTT_TIMEOUT) {
                 davis->mode = DAVIS_DRAIN;
                 davis->trans_time = now;
 
                 tp->snd_cwnd = MIN_CWND;
-                davis->min_rtt = davis->last_rtt;
+                davis->min_rtt = tp->srtt_us;
                 davis->min_rtt_time = now;
             } else {
                 davis->mode = DAVIS_GAIN_1;
@@ -253,14 +247,14 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
             }
         }
     } else if (davis->mode == DAVIS_DRAIN) {
-        if (now > davis->trans_time + DRAIN_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + DRAIN_RTTS*tp->srtt_us) {
             davis->mode = DAVIS_GAIN_1;
             davis->trans_time = now;
 
             tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
         }
     } else if (davis->mode == DAVIS_GAIN_1) {
-        if (now > davis->trans_time + GAIN_1_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + GAIN_1_RTTS*tp->srtt_us) {
             davis->mode = DAVIS_GAIN_2;
             davis->trans_time = now;
 
@@ -268,7 +262,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
             davis->delivered_start_time = tp->delivered_mstamp;
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
-        if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {
+        if (now > davis->trans_time + GAIN_2_RTTS*tp->srtt_us) {
             u32 diff_deliv = tp->delivered - davis->delivered_start;
             u32 interval = tp->delivered_mstamp - davis->delivered_start_time;
 
