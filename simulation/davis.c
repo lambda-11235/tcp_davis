@@ -15,7 +15,7 @@ static const unsigned long MIN_GAIN_CWND = 4;
 static const double GAIN_RATE = 1048576;
 
 static const unsigned long STABLE_RTTS = 4;
-static const unsigned long DRAIN_RTTS = 1;
+static const unsigned long DRAIN_RTTS = 2;
 static const unsigned long GAIN_1_RTTS = 1;
 static const unsigned long GAIN_2_RTTS = 1;
 
