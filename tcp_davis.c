@@ -238,15 +238,18 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
         davis_slow_start(sk, now);
     } else if (davis->mode == DAVIS_STABLE) {
         if (now > davis->trans_time + STABLE_RTTS*davis->last_rtt) {
-            davis->mode = DAVIS_DRAIN;
-            davis->trans_time = now;
-
             if (now > davis->min_rtt_time + RTT_TIMEOUT) {
+                davis->mode = DAVIS_DRAIN;
+                davis->trans_time = now;
+
                 tp->snd_cwnd = MIN_CWND;
                 davis->min_rtt = davis->last_rtt;
                 davis->min_rtt_time = now;
             } else {
-                tp->snd_cwnd = davis->bdp - gain_cwnd(sk);
+                davis->mode = DAVIS_GAIN_1;
+                davis->trans_time = now;
+
+                tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
             }
         }
     } else if (davis->mode == DAVIS_DRAIN) {

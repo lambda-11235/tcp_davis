@@ -136,15 +136,18 @@ void davis_on_ack(struct davis *d, double time, double rtt,
         davis_slow_start(d, time, rtt, pkts_delivered);
     } else if (d->mode == DAVIS_STABLE) {
         if (time > d->trans_time + STABLE_RTTS*d->last_rtt) {
-            d->mode = DAVIS_DRAIN;
-            d->trans_time = time;
-
             if (time > d->min_rtt_time + RTT_TIMEOUT) {
+                d->mode = DAVIS_DRAIN;
+                d->trans_time = time;
+
                 d->cwnd = MIN_CWND;
                 d->min_rtt = d->last_rtt;
                 d->min_rtt_time = time;
             } else {
-                d->cwnd = d->bdp - gain_cwnd(d);
+                d->mode = DAVIS_GAIN_1;
+                d->trans_time = time;
+
+                d->cwnd = d->bdp + gain_cwnd(d);
             }
         }
     } else if (d->mode == DAVIS_DRAIN) {
