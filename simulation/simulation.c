@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
 
     unsigned long inflight[NUM_FLOWS] = {0};
     unsigned long bytes_sent[NUM_FLOWS] = {0};
+    unsigned long pkts_delivered[NUM_FLOWS] = {0};
     unsigned long losses[NUM_FLOWS] = {0};
     double last_loss_time[NUM_FLOWS] = {0};
     double rtt[NUM_FLOWS] = {0};
@@ -139,9 +140,10 @@ int main(int argc, char *argv[])
 
             bn_packet = packet_buffer_dequeue(&bottleneck);
             inflight[flow]--;
+            pkts_delivered[flow]++;
 
             rtt[flow] = time - bn_packet->send_time;
-            davis_on_ack(&d[flow], time, rtt[flow], 1);
+            davis_on_ack(&d[flow], time, rtt[flow], pkts_delivered[flow]);
 
             next_bottleneck_time = time + MSS/max_bw(time);
             free(bn_packet);

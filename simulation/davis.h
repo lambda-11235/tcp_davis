@@ -15,8 +15,8 @@ struct davis {
     unsigned long cwnd;
     unsigned long ssthresh;
 
-    unsigned long delivered;
-    double dinterval;
+    unsigned long delivered_start;
+    double delivered_start_time;
 
     unsigned long bdp;
     unsigned long ss_last_bdp;

@@ -50,9 +50,9 @@ struct davis {
     enum davis_mode mode;
     u64 trans_time;
     u64 min_rtt_time;
+    u64 delivered_start_time;
 
-    u64 delivered;
-    u64 dinterval;
+    u32 delivered_start;
 
     u32 bdp;
     u32 ss_last_bdp;
@@ -87,18 +87,6 @@ static u32 gain_cwnd(struct sock *sk)
 }
 
 
-static u32 est_bdp(struct sock *sk)
-{
-    struct davis *davis = inet_csk_ca(sk);
-
-    if (davis->dinterval > 0)
-        return DIV64_U64_ROUND_UP(davis->delivered*davis->min_rtt,
-                                  davis->dinterval);
-    else
-        return davis->bdp;
-}
-
-
 static void davis_enter_slow_start(struct sock *sk, u64 now)
 {
     struct davis *davis = inet_csk_ca(sk);
@@ -128,8 +116,8 @@ void tcp_davis_init(struct sock *sk)
     tp->snd_cwnd = MIN_CWND;
     tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 
-    davis->delivered = 0;
-    davis->dinterval = 0;
+    davis->delivered_start = tp->delivered;
+    davis->delivered_start_time = tp->delivered_mstamp;
 
     davis->bdp = MIN_CWND;
     davis->ss_last_bdp = 0;
@@ -197,12 +185,17 @@ static void davis_slow_start(struct sock *sk, u64 now)
             davis->mode = DAVIS_GAIN_2;
             davis->trans_time = now;
 
-            davis->delivered = 0;
-            davis->dinterval = 0;
+            davis->delivered_start = tp->delivered;
+            davis->delivered_start_time = tp->delivered_mstamp;
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
         if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {
-            davis->bdp = est_bdp(sk);
+            u32 diff_deliv = tp->delivered - davis->delivered_start;
+            u32 interval = tp->delivered_mstamp - davis->delivered_start_time;
+
+            if (interval > 0)
+                davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
+                                          interval);
 
             if (davis->bdp > davis->ss_last_bdp) {
                 davis->mode = DAVIS_GAIN_1;
@@ -232,12 +225,6 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
     u64 now = davis_current_time(sk);
 
     if (rs->rtt_us > 0) {
-        if (davis->mode == DAVIS_GAIN_2 && rs->delivered > 0
-            && rs->interval_us > 0) {
-            davis->delivered += rs->delivered;
-            davis->dinterval += rs->interval_us;
-        }
-
         davis->last_rtt = rs->rtt_us;
 
         if (rs->rtt_us < davis->min_rtt) {
@@ -274,15 +261,21 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
             davis->mode = DAVIS_GAIN_2;
             davis->trans_time = now;
 
-            davis->delivered = 0;
-            davis->dinterval = 0;
+            davis->delivered_start = tp->delivered;
+            davis->delivered_start_time = tp->delivered_mstamp;
         }
     } else if (davis->mode == DAVIS_GAIN_2) {
         if (now > davis->trans_time + GAIN_2_RTTS*davis->last_rtt) {
+            u32 diff_deliv = tp->delivered - davis->delivered_start;
+            u32 interval = tp->delivered_mstamp - davis->delivered_start_time;
+
+            if (interval > 0)
+                davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
+                                          interval);
+
             davis->mode = DAVIS_STABLE;
             davis->trans_time = now;
 
-            davis->bdp = est_bdp(sk);
             tp->snd_cwnd = davis->bdp;
         }
     } else {
