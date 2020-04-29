@@ -11,7 +11,8 @@
 static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
-static const unsigned long MIN_GAIN_CWND = 4;
+static const unsigned long MIN_GAIN_CWND = 1;
+static const unsigned long MAX_GAIN_FACTOR = 16;
 static const double GAIN_RATE = 1048576;
 
 static const unsigned long DRAIN_RTTS = 2;
@@ -50,7 +51,8 @@ static void enter_slow_start(struct davis *d, double time)
 static unsigned long gain_cwnd(struct davis *d)
 {
     unsigned long gain = GAIN_RATE*d->min_rtt/d->mss;
-    gain = clamp(gain, MIN_GAIN_CWND, d->bdp/2);
+    gain = min(gain, d->bdp/MAX_GAIN_FACTOR);
+    gain = max(gain, MIN_GAIN_CWND);
 
     return gain;
 }

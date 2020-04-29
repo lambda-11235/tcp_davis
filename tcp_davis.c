@@ -15,7 +15,8 @@
 
 static const u32 MIN_CWND = 4;
 
-static u32 MIN_GAIN_CWND = 4;
+static u32 MIN_GAIN_CWND = 1;
+static u32 MAX_GAIN_FACTOR = 16;
 static u32 GAIN_RATE = 1048576;
 
 static const u32 DRAIN_RTTS = 2;
@@ -23,7 +24,7 @@ static const u32 GAIN_1_RTTS = 1;
 static const u32 GAIN_2_RTTS = 1;
 
 static const u32 RTT_INF = U32_MAX;
-static const u64 RTT_TIMEOUT = 10*USEC_PER_SEC;
+static u32 RTT_TIMEOUT_MS = 10*MSEC_PER_SEC;
 
 
 // TODO: These parameters should be non-zero. Not sure if it's worth
@@ -34,10 +35,16 @@ static const u64 RTT_TIMEOUT = 10*USEC_PER_SEC;
 // configurable would mainly just be confusing and possibly result in
 // bad behavior.
 module_param(MIN_GAIN_CWND, uint, 0644);
-MODULE_PARM_DESC(MIN_GAIN_CWND, "Minimum increase in snd_cwnd on each gain");
+MODULE_PARM_DESC(MIN_GAIN_CWND, "Minimum increase in snd_cwnd on each gain (packets)");
+
+module_param(MAX_GAIN_FACTOR, uint, 0644);
+MODULE_PARM_DESC(MAX_GAIN_FACTOR, "Maximum increase in snd_cwnd is BDP/MAX_GAIN_FACTOR");
 
 module_param(GAIN_RATE, uint, 0644);
-MODULE_PARM_DESC(GAIN_RATE, "Amount to increase rate on each gain");
+MODULE_PARM_DESC(GAIN_RATE, "Amount to increase rate on each gain (bytes/s)");
+
+module_param(RTT_TIMEOUT_MS, uint, 0644);
+MODULE_PARM_DESC(RTT_TIMEOUT_MS, "Timeout to probe for new RTT (milliseconds)");
 
 
 enum davis_mode { DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
@@ -74,9 +81,12 @@ static inline u64 rate_adj(struct sock *sk)
 static u32 gain_cwnd(struct sock *sk)
 {
     struct davis *davis = inet_csk_ca(sk);
-
     u32 gain = GAIN_RATE*davis->min_rtt/rate_adj(sk);
-    gain = clamp_t(u32, gain, MIN_GAIN_CWND, davis->bdp/2);
+
+    // NOTE: Clamp is not used since we cannot gaurantee
+    // MIN_GAIN_CWND < bdp/MAX_GAIN_FACTOR
+    gain = min_t(u32, gain, davis->bdp/MAX_GAIN_FACTOR);
+    gain = max_t(u32, gain, MIN_GAIN_CWND);
 
     return gain;
 }
@@ -250,7 +260,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
                 davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
                                           interval);
 
-            if (now > davis->min_rtt_time + RTT_TIMEOUT) {
+            if (now > davis->min_rtt_time + RTT_TIMEOUT_MS*USEC_PER_MSEC) {
                 davis->mode = DAVIS_DRAIN;
                 davis->trans_time = now;
 
