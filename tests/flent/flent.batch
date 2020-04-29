@@ -23,12 +23,12 @@ abstract = yes
 for_cc = davis, bbr, reno, vegas
 
 
-[Batch::tcp-2up]
+[Batch::tcp_1up]
 inherits = global
-test_name = tcp_2up
+test_name = tcp_1up
 disabled = no
 
-[Batch::tcp-12up]
+[Batch::tcp_12up]
 inherits = global
 test_name = tcp_12up
 disabled = no
