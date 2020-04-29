@@ -18,7 +18,6 @@ static const u32 MIN_CWND = 4;
 static u32 MIN_GAIN_CWND = 4;
 static u32 GAIN_RATE = 1048576;
 
-static u32 STABLE_RTTS = 4;
 static const u32 DRAIN_RTTS = 2;
 static const u32 GAIN_1_RTTS = 1;
 static const u32 GAIN_2_RTTS = 1;
@@ -40,11 +39,8 @@ MODULE_PARM_DESC(MIN_GAIN_CWND, "Minimum increase in snd_cwnd on each gain");
 module_param(GAIN_RATE, uint, 0644);
 MODULE_PARM_DESC(GAIN_RATE, "Amount to increase rate on each gain");
 
-module_param(STABLE_RTTS, uint, 0644);
-MODULE_PARM_DESC(STABLE_RTTS, "Number of RTTs to stay in STABLE mode for");
 
-
-enum davis_mode { DAVIS_STABLE, DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
+enum davis_mode { DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
 
 struct davis {
     enum davis_mode mode;
@@ -230,22 +226,6 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
 
     if (tcp_in_slow_start(tp)) {
         davis_slow_start(sk, now);
-    } else if (davis->mode == DAVIS_STABLE) {
-        if (now > davis->trans_time + STABLE_RTTS*tp->srtt_us) {
-            if (now > davis->min_rtt_time + RTT_TIMEOUT) {
-                davis->mode = DAVIS_DRAIN;
-                davis->trans_time = now;
-
-                tp->snd_cwnd = MIN_CWND;
-                davis->min_rtt = tp->srtt_us;
-                davis->min_rtt_time = now;
-            } else {
-                davis->mode = DAVIS_GAIN_1;
-                davis->trans_time = now;
-
-                tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
-            }
-        }
     } else if (davis->mode == DAVIS_DRAIN) {
         if (now > davis->trans_time + DRAIN_RTTS*tp->srtt_us) {
             davis->mode = DAVIS_GAIN_1;
@@ -270,10 +250,19 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
                 davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
                                           interval);
 
-            davis->mode = DAVIS_STABLE;
-            davis->trans_time = now;
+            if (now > davis->min_rtt_time + RTT_TIMEOUT) {
+                davis->mode = DAVIS_DRAIN;
+                davis->trans_time = now;
 
-            tp->snd_cwnd = davis->bdp;
+                tp->snd_cwnd = MIN_CWND;
+                davis->min_rtt = tp->srtt_us;
+                davis->min_rtt_time = now;
+            } else {
+                davis->mode = DAVIS_GAIN_1;
+                davis->trans_time = now;
+
+                tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
+            }
         }
     } else {
         printk(KERN_ERR "tcp_davis: Got to undefined mode %d at time %llu\n",
@@ -282,7 +271,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
         davis->mode = DAVIS_DRAIN;
         davis->trans_time = now;
 
-        tp->snd_cwnd = davis->bdp - gain_cwnd(sk);
+        tp->snd_cwnd = MIN_CWND;
     }
 
     tp->snd_cwnd = clamp_t(u32, tp->snd_cwnd, MIN_CWND, MAX_TCP_WINDOW);

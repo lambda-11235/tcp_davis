@@ -5,7 +5,7 @@
 #define _DAVIS_H_
 
 
-enum davis_mode { DAVIS_STABLE, DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
+enum davis_mode { DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
 
 struct davis {
     enum davis_mode mode;
