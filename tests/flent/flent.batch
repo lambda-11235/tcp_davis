@@ -1,6 +1,6 @@
 # -*- mode:conf -*-
 [Command::setup_cc]
-exec = sudo sysctl net.ipv4.tcp_congestion_control=${cc}
+exec = echo ${cc} | sudo tee /proc/sys/net/ipv4/tcp_congestion_control
 type = pre
 essential = yes
 
