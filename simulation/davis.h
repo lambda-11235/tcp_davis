@@ -23,7 +23,7 @@ struct davis {
 
     double pacing_rate;
 
-    double srtt;
+    double last_rtt;
     double min_rtt, min_rtt_time;
 };
 
