@@ -81,7 +81,8 @@ static inline u64 rate_adj(struct sock *sk)
 static u32 gain_cwnd(struct sock *sk)
 {
     struct davis *davis = inet_csk_ca(sk);
-    u32 gain = GAIN_RATE*davis->min_rtt/rate_adj(sk);
+    struct tcp_sock *tp = tcp_sk(sk);
+    u64 gain = div64_u64(((u64) GAIN_RATE)*davis->min_rtt, rate_adj(sk));
 
     // NOTE: Clamp is not used since we cannot gaurantee
     // MIN_GAIN_CWND < bdp/MAX_GAIN_FACTOR
