@@ -24,15 +24,15 @@ inline double app_rate(double t, size_t flow) {
     return 2*max_bw(t);
 }
 
-inline double flow_start_time(size_t flow) {
-    return 0;
-}
-
 inline unsigned long bdp(double t) { return max_bw(t)*min_rtt(t)/MSS; }
 inline unsigned long buf_size(double t) { return bdp(t); }
 
 const double RUNTIME = 60;
-inline double report_interval(double t) { return min_rtt(t); }
+inline double report_interval(double t) { return RUNTIME/10000; }
+
+inline double flow_start_time(size_t flow) {
+    return flow*RUNTIME/(4*(NUM_FLOWS + 1));
+}
 
 
 enum event_type { NONE, SEND, ARRIVAL, DEPARTURE };
