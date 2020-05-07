@@ -19,7 +19,7 @@ struct davis {
     double delivered_start_time;
 
     unsigned long bdp;
-    unsigned long ss_last_bdp;
+    unsigned long last_bdp;
 
     double pacing_rate;
 

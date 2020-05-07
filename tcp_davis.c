@@ -16,8 +16,6 @@
 static const u32 MIN_CWND = 4;
 
 static u32 MIN_GAIN_CWND = 4;
-static u32 MAX_GAIN_FACTOR = 16;
-static u32 GAIN_RATE = 1048576;
 
 static const u32 DRAIN_RTTS = 2;
 static const u32 GAIN_1_RTTS = 1;
@@ -37,12 +35,6 @@ static u32 RTT_TIMEOUT_MS = 10*MSEC_PER_SEC;
 module_param(MIN_GAIN_CWND, uint, 0644);
 MODULE_PARM_DESC(MIN_GAIN_CWND, "Minimum increase in snd_cwnd on each gain (packets)");
 
-module_param(MAX_GAIN_FACTOR, uint, 0644);
-MODULE_PARM_DESC(MAX_GAIN_FACTOR, "Maximum increase in snd_cwnd is BDP/MAX_GAIN_FACTOR");
-
-module_param(GAIN_RATE, uint, 0644);
-MODULE_PARM_DESC(GAIN_RATE, "Amount to increase rate on each gain (bytes/s)");
-
 module_param(RTT_TIMEOUT_MS, uint, 0644);
 MODULE_PARM_DESC(RTT_TIMEOUT_MS, "Timeout to probe for new RTT (milliseconds)");
 
@@ -58,7 +50,7 @@ struct davis {
     u32 delivered_start;
 
     u32 bdp;
-    u32 ss_last_bdp;
+    u32 last_bdp;
 
     u32 last_rtt;
     u32 min_rtt;
@@ -83,12 +75,10 @@ static u32 gain_cwnd(struct sock *sk)
 {
     struct davis *davis = inet_csk_ca(sk);
     struct tcp_sock *tp = tcp_sk(sk);
-    u64 gain = div64_u64(((u64) GAIN_RATE)*davis->min_rtt, rate_adj(sk));
+    u64 gain = MIN_GAIN_CWND;
 
-    // NOTE: Clamp is not used since we cannot gaurantee
-    // MIN_GAIN_CWND < bdp/MAX_GAIN_FACTOR
-    gain = min_t(u32, gain, davis->bdp/MAX_GAIN_FACTOR);
-    gain = max_t(u32, gain, MIN_GAIN_CWND);
+    if (davis->bdp > davis->last_bdp)
+        gain += davis->bdp - davis->last_bdp;
 
     return gain;
 }
@@ -103,7 +93,7 @@ static void davis_enter_slow_start(struct sock *sk, u64 now)
     davis->trans_time = now;
 
     davis->bdp = MIN_CWND;
-    davis->ss_last_bdp = 0;
+    davis->last_bdp = 0;
 
     tp->snd_cwnd = MIN_CWND;
 
@@ -127,7 +117,7 @@ void tcp_davis_init(struct sock *sk)
     davis->delivered_start_time = tp->delivered_mstamp;
 
     davis->bdp = MIN_CWND;
-    davis->ss_last_bdp = 0;
+    davis->last_bdp = 0;
 
     sk->sk_pacing_rate = 0;
 
@@ -204,13 +194,13 @@ static void davis_slow_start(struct sock *sk, u64 now)
                 davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
                                           interval);
 
-            if (davis->bdp > davis->ss_last_bdp) {
+            if (davis->bdp > davis->last_bdp) {
                 davis->mode = DAVIS_GAIN_1;
                 davis->trans_time = now;
 
                 tp->snd_cwnd = 3*davis->bdp/2;
 
-                davis->ss_last_bdp = davis->bdp;
+                davis->last_bdp = davis->bdp;
             } else {
                 davis->mode = DAVIS_DRAIN;
                 davis->trans_time = now;
@@ -263,6 +253,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
             u32 diff_deliv = tp->delivered - davis->delivered_start;
             u32 interval = tp->delivered_mstamp - davis->delivered_start_time;
 
+            davis->last_bdp = davis->bdp;
             if (interval > 0)
                 davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
                                           interval);

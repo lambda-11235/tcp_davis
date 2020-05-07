@@ -12,8 +12,6 @@ static const unsigned long MIN_CWND = 4;
 static const unsigned long MAX_CWND = 33554432;//32768;
 
 static const unsigned long MIN_GAIN_CWND = 4;
-static const unsigned long MAX_GAIN_FACTOR = 16;
-static const double GAIN_RATE = 1048576;
 
 static const unsigned long DRAIN_RTTS = 2;
 static const unsigned long GAIN_1_RTTS = 1;
@@ -40,19 +38,19 @@ static void enter_slow_start(struct davis *d, double time)
     d->trans_time = time;
 
     d->bdp = MIN_CWND;
-    d->ss_last_bdp = 0;
+    d->last_bdp = 0;
 
     d->cwnd = MIN_CWND;
 
     d->min_rtt = d->last_rtt;
 }
 
-
 static unsigned long gain_cwnd(struct davis *d)
 {
-    unsigned long gain = GAIN_RATE*d->min_rtt/d->mss;
-    gain = min(gain, d->bdp/MAX_GAIN_FACTOR);
-    gain = max(gain, MIN_GAIN_CWND);
+    unsigned long gain = MIN_GAIN_CWND;
+
+    if (d->bdp > d->last_bdp)
+        gain += d->bdp - d->last_bdp;
 
     return gain;
 }
@@ -72,7 +70,7 @@ void davis_init(struct davis *d, double time,
     d->delivered_start_time = time;
 
     d->bdp = MIN_CWND;
-    d->ss_last_bdp = 0;
+    d->last_bdp = 0;
 
     d->pacing_rate = 0;
 
@@ -97,15 +95,15 @@ static void davis_slow_start(struct davis *d, double time, double rtt,
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
             unsigned long diff_deliv = pkts_delivered - d->delivered_start;
             double interval = time - d->delivered_start_time;
+
             d->bdp = ceil(diff_deliv*d->min_rtt/interval);
 
-            if (d->bdp > d->ss_last_bdp) {
+            if (d->bdp > d->last_bdp) {
                 d->mode = DAVIS_GAIN_1;
                 d->trans_time = time;
 
                 d->cwnd = 3*d->bdp/2;
-
-                d->ss_last_bdp = d->bdp;
+                d->last_bdp = d->bdp;
             } else {
                 d->mode = DAVIS_DRAIN;
                 d->trans_time = time;
@@ -154,7 +152,10 @@ void davis_on_ack(struct davis *d, double time, double rtt,
         if (time > d->trans_time + GAIN_2_RTTS*d->last_rtt) {
             unsigned long diff_deliv = pkts_delivered - d->delivered_start;
             double interval = time - d->delivered_start_time;
+
+            d->last_bdp = d->bdp;
             d->bdp = ceil(diff_deliv*d->min_rtt/interval);
+
 
             if (time > d->min_rtt_time + RTT_TIMEOUT) {
                 d->mode = DAVIS_DRAIN;
