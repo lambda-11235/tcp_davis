@@ -16,7 +16,7 @@ length = 60
 
 filename_extra = ${cc}-${repetition}
 commands = setup_cc
-repetitions = 1
+repetitions = 3
 pause = 5
 abstract = yes
 
@@ -28,10 +28,9 @@ inherits = global
 test_name = tcp_1up
 disabled = no
 
-[Batch::tcp_32up]
+[Batch::tcp_8up]
 inherits = global
-test_name = tcp_nup
-test_parameters=upload_streams=32
+test_name = tcp_8up
 disabled = no
 
 
