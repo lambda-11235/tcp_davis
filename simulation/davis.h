@@ -20,6 +20,7 @@ struct davis {
 
     unsigned long bdp;
     unsigned long last_bdp;
+    unsigned long gain_cwnd;
 
     double pacing_rate;
 

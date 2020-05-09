@@ -12,13 +12,14 @@
 
 
 #define DAVIS_PRNT "tcp_davis: "
+//#define DAVIS_DEBUG
 
 static const u32 MIN_CWND = 4;
 
 static u32 MIN_GAIN_CWND = 4;
 
 static const u32 DRAIN_RTTS = 2;
-static const u32 GAIN_1_RTTS = 1;
+static const u32 GAIN_1_RTTS = 2;
 static const u32 GAIN_2_RTTS = 1;
 
 static const u32 RTT_INF = U32_MAX;
@@ -51,6 +52,7 @@ struct davis {
 
     u32 bdp;
     u32 last_bdp;
+    u32 gain_cwnd;
 
     u32 last_rtt;
     u32 min_rtt;
@@ -71,19 +73,6 @@ static inline u64 rate_adj(struct sock *sk)
 }
 
 
-static u32 gain_cwnd(struct sock *sk)
-{
-    struct davis *davis = inet_csk_ca(sk);
-    struct tcp_sock *tp = tcp_sk(sk);
-    u64 gain = MIN_GAIN_CWND;
-
-    if (davis->bdp > davis->last_bdp)
-        gain += davis->bdp - davis->last_bdp;
-
-    return gain;
-}
-
-
 static void davis_enter_slow_start(struct sock *sk, u64 now)
 {
     struct davis *davis = inet_csk_ca(sk);
@@ -98,6 +87,34 @@ static void davis_enter_slow_start(struct sock *sk, u64 now)
     tp->snd_cwnd = MIN_CWND;
 
     davis->min_rtt = davis->last_rtt;
+}
+
+
+static void update_gain_cwnd(struct sock *sk)
+{
+    struct davis *davis = inet_csk_ca(sk);
+    u32 abs_diff_bdp;
+
+    if (davis->bdp > davis->last_bdp)
+        abs_diff_bdp = davis->bdp - davis->last_bdp;
+    else
+        abs_diff_bdp = davis->last_bdp - davis->bdp;
+
+    /* This is the trickiest part of the algorithm to get right.
+     *
+     * 2*abs_diff_bdp makes flows unfairer, but gaurantees full
+     * bandwidth usage. For a low number of flows (4-8) we get pretty
+     * good fairness. A higher number of flows will still converge to
+     * fairness, but occasionally one flow's bandwidth will spike.
+     *
+     * Using 1*abs_diff_bdp makes flows fairer, but occasionally does
+     * not use full bandwidth (can be 5-50% of full).
+     *
+     * In the end we use 2*abs_diff_bdp, because it gives pretty good
+     * fairness while maximizing performance.
+     */
+    davis->gain_cwnd = min_t(u32, 2*abs_diff_bdp, davis->bdp);
+    davis->gain_cwnd += MIN_GAIN_CWND;
 }
 
 
@@ -118,6 +135,7 @@ void tcp_davis_init(struct sock *sk)
 
     davis->bdp = MIN_CWND;
     davis->last_bdp = 0;
+    davis->gain_cwnd = MIN_GAIN_CWND;
 
     sk->sk_pacing_rate = 0;
 
@@ -161,10 +179,11 @@ u32 tcp_davis_undo_cwnd(struct sock *sk)
     u64 now = davis_current_time(sk);
 
     if (tcp_in_slow_start(tp)) {
-        davis->mode = DAVIS_GAIN_1;
+        davis->mode = DAVIS_DRAIN;
         davis->trans_time = now;
 
-        tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
+        tp->snd_cwnd = MIN_CWND;
+        tp->snd_ssthresh = MIN_CWND;
     }
 
     return tp->snd_cwnd;
@@ -238,7 +257,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
             davis->mode = DAVIS_GAIN_1;
             davis->trans_time = now;
 
-            tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
+            tp->snd_cwnd = davis->bdp + davis->gain_cwnd;
         }
     } else if (davis->mode == DAVIS_GAIN_1) {
         if (now > davis->trans_time + GAIN_1_RTTS*davis->last_rtt) {
@@ -258,6 +277,14 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
                 davis->bdp = DIV_ROUND_UP(diff_deliv*davis->min_rtt,
                                           interval);
 
+            update_gain_cwnd(sk);
+
+#ifdef DAVIS_DEBUG
+            printk(KERN_DEBUG DAVIS_PRNT
+                   "bdp = %u, gain_cwnd = %u, min_rtt = %u\n",
+                   davis->bdp, davis->gain_cwnd, davis->min_rtt);
+#endif
+
             if (now > davis->min_rtt_time + RTT_TIMEOUT_MS*USEC_PER_MSEC) {
                 davis->mode = DAVIS_DRAIN;
                 davis->trans_time = now;
@@ -269,7 +296,7 @@ void tcp_davis_cong_control(struct sock *sk, const struct rate_sample *rs)
                 davis->mode = DAVIS_GAIN_1;
                 davis->trans_time = now;
 
-                tp->snd_cwnd = davis->bdp + gain_cwnd(sk);
+                tp->snd_cwnd = davis->bdp + davis->gain_cwnd;
             }
         }
     } else {

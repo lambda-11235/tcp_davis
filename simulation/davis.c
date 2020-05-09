@@ -14,7 +14,7 @@ static const unsigned long MAX_CWND = 33554432;//32768;
 static const unsigned long MIN_GAIN_CWND = 4;
 
 static const unsigned long DRAIN_RTTS = 2;
-static const unsigned long GAIN_1_RTTS = 1;
+static const unsigned long GAIN_1_RTTS = 2;
 static const unsigned long GAIN_2_RTTS = 1;
 
 static const double RTT_INF = 10;
@@ -45,14 +45,18 @@ static void enter_slow_start(struct davis *d, double time)
     d->min_rtt = d->last_rtt;
 }
 
-static unsigned long gain_cwnd(struct davis *d)
+
+static void update_gain_cwnd(struct davis *d)
 {
-    unsigned long gain = MIN_GAIN_CWND;
+    unsigned long abs_diff_bdp;
 
     if (d->bdp > d->last_bdp)
-        gain += d->bdp - d->last_bdp;
+        abs_diff_bdp = d->bdp - d->last_bdp;
+    else
+        abs_diff_bdp = d->last_bdp - d->bdp;
 
-    return gain;
+    d->gain_cwnd = min(2*abs_diff_bdp, d->bdp);
+    d->gain_cwnd += MIN_GAIN_CWND;
 }
 
 
@@ -71,6 +75,7 @@ void davis_init(struct davis *d, double time,
 
     d->bdp = MIN_CWND;
     d->last_bdp = 0;
+    d->gain_cwnd = MIN_GAIN_CWND;
 
     d->pacing_rate = 0;
 
@@ -124,7 +129,7 @@ void davis_on_ack(struct davis *d, double time, double rtt,
     if (rtt > 0) {
         d->last_rtt = rtt;
 
-        if (rtt < d->min_rtt) {
+        if (rtt <= d->min_rtt) {
             d->min_rtt = rtt;
             d->min_rtt_time = time;
         }
@@ -138,7 +143,7 @@ void davis_on_ack(struct davis *d, double time, double rtt,
             d->mode = DAVIS_GAIN_1;
             d->trans_time = time;
 
-            d->cwnd = d->bdp + gain_cwnd(d);
+            d->cwnd = d->bdp + d->gain_cwnd;
         }
     } else if (d->mode == DAVIS_GAIN_1) {
         if (time > d->trans_time + GAIN_1_RTTS*d->last_rtt) {
@@ -156,6 +161,8 @@ void davis_on_ack(struct davis *d, double time, double rtt,
             d->last_bdp = d->bdp;
             d->bdp = ceil(diff_deliv*d->min_rtt/interval);
 
+            update_gain_cwnd(d);
+
 
             if (time > d->min_rtt_time + RTT_TIMEOUT) {
                 d->mode = DAVIS_DRAIN;
@@ -168,7 +175,7 @@ void davis_on_ack(struct davis *d, double time, double rtt,
                 d->mode = DAVIS_GAIN_1;
                 d->trans_time = time;
 
-                d->cwnd = d->bdp + gain_cwnd(d);
+                d->cwnd = d->bdp + d->gain_cwnd;
             }
         }
     } else {
@@ -188,9 +195,10 @@ void davis_on_ack(struct davis *d, double time, double rtt,
 void davis_on_loss(struct davis *d, double time)
 {
     if (in_slow_start(d)) {
-        d->mode = DAVIS_GAIN_1;
+        d->mode = DAVIS_DRAIN;
         d->trans_time = time;
 
-        d->cwnd = d->bdp + gain_cwnd(d);
+        d->cwnd = MIN_CWND;
+        d->ssthresh = MIN_CWND;
     }
 }
