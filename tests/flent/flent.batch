@@ -16,11 +16,11 @@ length = 60
 
 filename_extra = ${cc}-${repetition}
 commands = setup_cc
-repetitions = 3
+repetitions = 2
 pause = 5
 abstract = yes
 
-for_cc = davis, bbr, reno, vegas
+for_cc = davis, bbr, cubic, reno, vegas
 
 
 [Batch::tcp_1up]
@@ -40,11 +40,11 @@ cc = davis
 [Arg::bbr]
 cc = bbr
 
-[Arg::reno]
-cc = reno
-
 [Arg::cubic]
 cc = cubic
+
+[Arg::reno]
+cc = reno
 
 [Arg::vegas]
 cc = vegas
