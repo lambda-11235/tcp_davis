@@ -28,10 +28,10 @@ inherits = global
 test_name = tcp_1up
 disabled = no
 
-[Batch::tcp_32up]
+[Batch::tcp_128up]
 inherits = global
 test_name = tcp_nup
-test_parameters=upload_streams=32
+test_parameters=upload_streams=128
 disabled = no
 
 
