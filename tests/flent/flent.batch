@@ -28,6 +28,11 @@ inherits = global
 test_name = tcp_1up
 disabled = no
 
+[Batch::tcp_8up]
+inherits = global
+test_name = tcp_8up
+disabled = no
+
 [Batch::tcp_128up]
 inherits = global
 test_name = tcp_nup
