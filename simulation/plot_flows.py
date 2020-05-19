@@ -20,6 +20,8 @@ parser.add_argument('--rtt-limit', type=float, nargs=2,
         help="")
 parser.add_argument('--rate-interval', type=float,
         help="")
+parser.add_argument('-o', '--output-prefix', type=str,
+        help="Prefix for output files.")
 args = parser.parse_args()
 
 mpl.style.use('seaborn-bright')
@@ -52,6 +54,9 @@ ax.set_xlabel("Time (s)")
 ax.set_ylabel("CWND (packets)")
 ax.legend()
 
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-cwnd.png', bbox_inches='tight')
+
 
 ### Losses ###
 fig = plt.figure()
@@ -63,6 +68,9 @@ for i, flow in enumerate(flows):
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Losses (packets)")
 ax.legend()
+
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-losses.png', bbox_inches='tight')
 
 
 ### Rate ###
@@ -79,6 +87,9 @@ ax.set_xlabel("Time (s)")
 ax.set_ylabel("Rate (Mbps)")
 ax.legend()
 
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-rate.png', bbox_inches='tight')
+
 
 ### RTT ###
 fig = plt.figure()
@@ -94,6 +105,9 @@ ax.set_xlabel("Time (s)")
 ax.set_ylabel("RTT (ms)")
 ax.legend()
 
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-rtt.png', bbox_inches='tight')
+
 
 ### Mode ###
 fig = plt.figure()
@@ -105,6 +119,9 @@ for i, flow in enumerate(flows):
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Mode")
 ax.legend()
+
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-mode.png', bbox_inches='tight')
 
 
 ### Fairness ###
@@ -126,5 +143,9 @@ if len(flows) > 0:
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Jain Index")
 
+if args.output_prefix is not None:
+    plt.savefig(args.output_prefix + '-jain.png', bbox_inches='tight')
 
-plt.show()
+
+if args.output_prefix is None:
+    plt.show()
