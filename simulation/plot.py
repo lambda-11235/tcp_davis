@@ -38,6 +38,7 @@ rate = calcRates(time, data['bytes_sent'], interval=args.rate_interval)
 
 ### CWND ###
 cwnd = data.cwnd
+gain_cwnd = data.gain_cwnd
 bdp = data.bdp
 
 fig = plt.figure()
@@ -47,6 +48,7 @@ if args.cwnd_limit is not None:
     ax.set_ylim(args.cwnd_limit[0], args.cwnd_limit[1])
 
 ax.plot(time, cwnd, label="CWND", color="blue")
+ax.plot(time, gain_cwnd, label="Gain CWND", color="green")
 ax.plot(time, bdp, "--", label="BDP", color="red")
 
 ax.set_xlabel("Time (s)")

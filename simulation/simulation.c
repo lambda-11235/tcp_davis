@@ -42,11 +42,17 @@ unsigned long buf_size(double t) {
     return max_bdp;
 }
 
-const double RUNTIME = 60*10;
-static inline double report_interval(double t) { return RUNTIME/10000; }
+const double RUNTIME = 60;
+static inline double report_interval(double t) {
+    if (NUM_FLOWS > 16)
+        return RUNTIME/100;
+    else
+        return RUNTIME/1000;
+}
 
 static inline double flow_start_time(size_t flow) {
-    return flow*RUNTIME/(4*(NUM_FLOWS + 1));
+    double all_by = 10;//RUNTIME/4;
+    return flow*all_by/(NUM_FLOWS + 1);
 }
 
 
@@ -63,7 +69,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Loss probability defaulting to 0\n");
 
     printf("flow_id,time,rtt,cwnd,bytes_sent,losses,");
-    printf("pacing_rate,min_rtt,bdp,mode\n");
+    printf("gain_cwnd,pacing_rate,min_rtt,bdp,mode\n");
 
     unsigned int last_perc = 0;
     double last_print_time = 0;
@@ -202,8 +208,8 @@ int main(int argc, char *argv[])
             for (size_t i = 0; i < NUM_FLOWS; i++) {
                 printf("%ld,%f,%f,%lu,%lu,%lu,", i, time, rtt[i],
                        d[i].cwnd, bytes_sent[i], losses[i]);
-                printf("%f,%f,%lu,%u\n", d->pacing_rate, d[i].min_rtt,
-                       d[i].bdp, d[i].mode);
+                printf("%lu,%f,%f,%lu,%u\n", d->gain_cwnd, d->pacing_rate,
+                       d[i].min_rtt, d[i].bdp, d[i].mode);
 
                 bytes_sent[i] = 0;
             }
