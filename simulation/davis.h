@@ -5,7 +5,7 @@
 #define _DAVIS_H_
 
 
-enum davis_mode { DAVIS_DRAIN, DAVIS_GAIN_1, DAVIS_GAIN_2 };
+enum davis_mode { DAVIS_DRAIN, DAVIS_STABLE, DAVIS_GAIN_1, DAVIS_GAIN_2 };
 
 struct davis {
     enum davis_mode mode;
@@ -21,6 +21,9 @@ struct davis {
     unsigned long bdp;
     unsigned long last_bdp;
     unsigned long gain_cwnd;
+
+    struct drand48_data drand_buffer;
+    unsigned long stable_rtts;
 
     double pacing_rate;
 
